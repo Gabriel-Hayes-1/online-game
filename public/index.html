@@ -6,7 +6,9 @@
         <meta name="viewport" content="width=device-width, initial-scale=1.0">
         <title>Online Game</title>
         <link rel="stylesheet" href="styles.css">
-        <script src="client.js" defer></script>
+        
+        <script src="client.js" type="module"></script>
+        <script src="classes.js" type="module"></script>
     </head>
     <body>
         <div id="name-screen">
@@ -21,10 +23,7 @@
         <div id="game-space">
             
             <canvas id="canvas"></canvas>
-            
-            <img id="game-map" src="images/game-map.webp" alt="Game Map">       
         </div>
-
-    <script src="/socket.io/socket.io.js"></script>
+        <script src="/socket.io/socket.io.js"></script>
     </body>
 </html>
