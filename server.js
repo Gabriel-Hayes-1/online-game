@@ -11,6 +11,83 @@ const players = {};
 
 app.use(express.static('public'));
 
+
+const rl = require('readline').createInterface({
+    input: process.stdin,
+    output: process.stdout
+});
+
+rl.on('line', (input) => {
+    input = input.trim();
+    switch (true) {
+        case input === 'data get':
+            console.log('Current player data:');
+            console.log(JSON.stringify(players));
+            break;
+        case input === 'data get playerboard':
+            //log all players socket ids and names
+            console.log('Current player board:');
+            for (const socketId in players) {
+                const player = players[socketId];
+                console.log(`ID: ${socketId}, Name: ${player.name || 'Unnamed'}`);
+            }
+            break;
+        
+        case input.startsWith('data get player '):
+            //extract the id
+            const playerId = input.split(' ')[3];
+            if (players[playerId]) {
+                console.log(`Player ${playerId} data:`);
+                console.log(JSON.stringify(players[playerId]));
+            } else {
+                console.log(`Player ${playerId} not found.`);
+            }
+            break;
+
+        case input.startsWith('data set player '):
+            //extract the id, property, and value
+            const parts = input.split(' ');
+            if (parts.length < 5) {
+                console.log('Usage: data set player <id> <property> <value>');
+                break;
+            }
+            const setPlayerId = parts[3];
+            const property = parts[4];
+            const value = parts.slice(5).join(' ');
+
+            if (players[setPlayerId]) {
+                if (property in players[setPlayerId]) {
+                    //make sure that the data type of the value matches the property
+                    const propertyType = typeof players[setPlayerId][property];
+                    switch (propertyType) {
+                        case 'number':
+                            players[setPlayerId][property] = parseFloat(value);
+                            break;
+                        case 'string':
+                            players[setPlayerId][property] = value;
+                            console.log(`Property ${property} set to ${value} for player ${setPlayerId}.`);
+                            break;
+                        case 'boolean':
+                            players[setPlayerId][property] = (value.toLowerCase() === 'true');
+                            break;
+                        case 'object':
+                            try {
+                                players[setPlayerId][property] = JSON.parse(value);
+                            } catch (e) {
+                                console.log(`Failed to parse JSON for property ${property}: ${e.message}`);
+                            }
+                            break;
+                        default:
+                            console.log(`Property ${property} has an unsupported type: ${propertyType}`);
+                    }
+                } else {
+                    console.log(`Property ${property} does not exist for player ${setPlayerId}.`);
+                }
+            } else {console.log(`Player ${setPlayerId} not found.`); break;}
+            
+    }
+});
+
 function getObjectsVisibleTo(id) {
     const player = objects[id];
     const viewport = player.viewport
@@ -18,6 +95,7 @@ function getObjectsVisibleTo(id) {
     const visiblePlayers = {};
 
     for (i in objects) {
+        if (i == id) continue; // skip self
         const object = objects[i];
         // Check if the other player is within the viewport bounds
         const buffer = 50; // Add a buffer to the viewport size
@@ -46,9 +124,15 @@ setInterval(() => {
 
         for (const socketId in players) {
             const visiblePlayers = getObjectsVisibleTo(socketId);
-            io.to(socketId).emit('getObjects', objects); 
+            //send player list of objects minus themselves
+            const o = {};
+            for (const id in objects) {
+                if (id !== socketId) { // don't send self
+                    o[id] = visiblePlayers[id];
+                }
+            }
+            io.to(socketId).emit('getObjects', o); 
         }
-        console.log(`objects: ${JSON.stringify(objects)}`);
     }
 
 
@@ -117,6 +201,7 @@ io.on('connection', (socket) => {
     // (i) all properties including 'constant' are to be stats for the players' ship.
     players[socket.id] = {
         id:socket.id,
+        isPlayer: true, //when objects are fully implemented, this will be used to determine if the object is a player or not
         name: null,
         pos:{x:0,y:0},
         motion: {x:0,y:0}, 

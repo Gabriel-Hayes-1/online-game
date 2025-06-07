@@ -52,6 +52,7 @@ const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
 
+
 function pixelDensityResolve(canvas, ctx) { //make the canvas hd
    const dpr = window.devicePixelRatio || 1; 
    const rect = canvas.getBoundingClientRect(); 
@@ -108,7 +109,6 @@ function findDrawingListItemsWithId(id) {
    // Return the first match or undefined if no match is found
    return matches[0];
  }
-
 
 
 socket.on("connect", () => {
@@ -184,40 +184,17 @@ nameInput.addEventListener('keydown', function(event) {
  const keysPressed = [];
 
 
+
 socket.on("getObjects", (data) => {
-   
-   // Create a map of current DrawingList items by their IDs
-   const currentIds = new Map(DrawingList.map(item => [item.id, item]));
-
-   // Loop through the data received from the server
-   for (const item of data) {
-      const id = item.id;
-      const objectData = item.data;
-
-      // Check if the object already exists in the DrawingList
-      if (currentIds.has(id)) {
-         // Update the existing object's data
-         const existingObject = currentIds.get(id);
-         existingObject.updateData(objectData); // Assuming objects have an updateData method
-         currentIds.delete(id); // Remove from the map to track remaining items
+   for (const [key,value] of Object.entries(data)) {
+      const x = worldToViewport([lx, -ly], [value.pos.x, -value.pos.y]);
+      const spos = { x: x[0], y: x[1] };
+      if (value.isPlayer === true) {
+         DrawingList[key] = new Player(value.id, spos, value.name);
       } else {
-         // Add new object to the DrawingList
-         const [screenX, screenY] = worldToViewport([lx, -ly], [objectData.pos.x, -objectData.pos.y]);
-         const newObject = new Player(id, { x: screenX, y: screenY }, objectData.name);
-         DrawingList.push(newObject);
+         DrawingList[key] = new object(value.id, spos);
       }
    }
-
-   // Remove objects from DrawingList that are no longer in the server data
-   for (const [id, object] of currentIds) {
-      const index = DrawingList.indexOf(object);
-      if (index > -1) {
-         DrawingList.splice(index, 1); // Remove the object
-      }
-   }
-
-
-
 });
 
 
@@ -299,12 +276,15 @@ renderLoop();
 
 
 document.addEventListener('keydown', (event) => {
+   //this is for debugging
    if (event.key === 'Enter' && enteredName) {
-      //debugging 
       alert(DrawingList.length)
-   }});
+   }
+   if (event.key === '0') {
+      alert(lx + " " + ly);
+   }
+});
 
 
 
 
-   

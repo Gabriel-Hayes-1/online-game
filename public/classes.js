@@ -16,11 +16,12 @@ export class object {
     this.doDrawing = doDrawing
     }
     updateData(newData) {
-       // Update the object's data with newData
-       Object.assign(this, newData);
-       if (newData.hasOwnProperty('zIndex')) {
-            sortDrawList()
-       }
+      //update various data if provided
+       this.pos = newData.pos || this.pos; 
+       this.rot = newData.rot || this.rot; 
+       this.doDrawing = newData.doDrawing !== undefined ? newData.doDrawing : this.doDrawing; 
+
+       
     }
     
     //draw function will be provided in decendant classes
@@ -34,9 +35,10 @@ export class Player extends object {
        this.name = name;
        //rest is inhereted from object
     }
-    updateName(newName) {
-       this.name = newName;
-    }
+   updateData(newData) {
+      super.updateData(newData); // Call the parent class's updateData
+      this.name = newData.name || this.name; // Update name if provided
+   }
     draw(ctx) {
        if (!this.doDrawing) {
           return; // Skip drawing if doDrawing is false
