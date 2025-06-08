@@ -2,7 +2,7 @@
 let players = {};
 
 //list of objects canvas should render
-export let DrawingList = []
+export let DrawingList = [];
 /*
 drawinglist structure:
 
@@ -10,8 +10,6 @@ filled with objects that have a draw method
 */
 
 
-let speedX = 0
-let speedY = 0
 
 //local x local y
 let lx = 0
@@ -87,14 +85,16 @@ function worldToViewport(cameraOrigin, worldPoint) {
    const [camX, camY] = cameraOrigin;
    const [x1, y1] = worldPoint;
  
-   const screenX = x1 - camX + viewportWidth / 2;
-   const screenY = y1 - camY + viewportHeight / 2;
+   let screenX = x1 - camX + viewportWidth / 2;
+   let screenY = y1 - camY + viewportHeight / 2;
  
    return [screenX, screenY];
  }
+
+
 function findDrawingListItemsWithId(id) {
-   // Filter the DrawingList to find all items with the matching ID
-   const matches = DrawingList.filter(item => item instanceof Player && item.id === id);
+   // Find all items with the matching ID, regardless of class (object, Player, or subclasses)
+   const matches = DrawingList.filter(item => item.id === id);
 
    // If there are duplicates, remove all but the first match
    if (matches.length > 1) {
@@ -108,7 +108,7 @@ function findDrawingListItemsWithId(id) {
 
    // Return the first match or undefined if no match is found
    return matches[0];
- }
+}
 
 
 socket.on("connect", () => {
@@ -119,13 +119,14 @@ socket.on('nameRecieved', (data) => {
    nameScreen.style.display = "none";
    enteredName = true;
    
-   //set local copy of player data to what server sent us
-   players[socket.id] = data;
+   //set lx and ly to the player's position (futureproofing for when server saves player position cross-session)
+   lx = data.pos.x;
+   ly = data.pos.y;
 
    const spos = { x: worldToViewport([lx, -ly], [data.pos.x, -data.pos.y])[0], y: worldToViewport([lx, -ly], [data.pos.x, -data.pos.y])[1] };
    const newplayer = new Player(socket.id, spos, data.name);
-   newplayer.changeZIndex(4); // Set initial zIndex to 4
    DrawingList.push(newplayer);
+   newplayer.changeZIndex(4); // Set initial zIndex to 4
 });
 
 
@@ -184,19 +185,69 @@ nameInput.addEventListener('keydown', function(event) {
  const keysPressed = [];
 
 
+function addObjecttoDrawlist(object) {
+   // object is any instance of object or its subclasses (like Player)
+   const existingPlayer = findDrawingListItemsWithId(object.id);
+   if (existingPlayer) {
+      // Update all relevant properties directly to keep the reference intact
+      Object.assign(existingPlayer, object);
+   } else {
+      // If it doesn't exist, add to drawlist
+      DrawingList.push(object);
+   }
+}
+
 
 socket.on("getObjects", (data) => {
    for (const [key,value] of Object.entries(data)) {
+      if (value.id === socket.id) {
+         // Update local player position and rotation and skip adding it to the DrawingList
+         lx = value.pos.x;
+         ly = value.pos.y;
+         const meInDrawingList = findDrawingListItemsWithId(socket.id);
+         meInDrawingList.updateData({
+            rot: value.rot,
+         });
+
+         continue;
+      }
+      
+      if (value.pos.x != 0) {
+         console.log(value.pos.x, value.pos.y);
+      }
       const x = worldToViewport([lx, -ly], [value.pos.x, -value.pos.y]);
       const spos = { x: x[0], y: x[1] };
-      if (value.isPlayer === true) {
-         DrawingList[key] = new Player(value.id, spos, value.name);
+      const exsistingObject = findDrawingListItemsWithId(value.id);
+      if (exsistingObject) {
+         // Update existing player data
+         exsistingObject.updateData({
+            pos: spos,
+            rot: value.rot,
+            name: value.name,
+            doDrawing: true
+         });
       } else {
-         DrawingList[key] = new object(value.id, spos);
+         // Create a new object if it doesn't exist
+         const newPlayer = new Player(value.id, spos, value.name);
+         newPlayer.rot = value.rot; // Set rotation
+         newPlayer.doDrawing = true; // Set drawing state
+         newPlayer.changeZIndex(4); // Set zIndex for players
+         addObjecttoDrawlist(newPlayer);
       }
    }
+
+   // Remove objects that are no longer present
+   DrawingList = DrawingList.filter(item => data[item.id] !== undefined || item.id === socket.id);
 });
 
+socket.on("kick", (message) => {
+   alert(message);
+   socket.disconnect(true); // Disconnect the socket
+   enteredName = false; // Reset name entry state
+   nameScreen.style.display = "block"; // Show the name entry screen again
+   DrawingList = []; // Clear the drawing list
+   console.warn(message);
+});
 
 
 
@@ -252,7 +303,6 @@ document.addEventListener("mousemove", (event) => {
 
 
 
-
 export function sortDrawList() {
    // Sort DrawingList based on zIndex
    DrawingList.sort((a, b) => a.zIndex - b.zIndex);
@@ -277,11 +327,11 @@ renderLoop();
 
 document.addEventListener('keydown', (event) => {
    //this is for debugging
-   if (event.key === 'Enter' && enteredName) {
-      alert(DrawingList.length)
+   if (event.key === '9') {
+      console.log("DrawingList: ", DrawingList);
    }
    if (event.key === '0') {
-      alert(lx + " " + ly);
+      console.log("lpos: ", lx, ly);
    }
 });
 

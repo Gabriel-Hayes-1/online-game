@@ -1,6 +1,4 @@
-const { table } = require('console');
 const express = require('express');
-const { json } = require('stream/consumers');
 const app = express();
 const http = require('http').createServer(app);
 const io = require('socket.io')(http);
@@ -95,15 +93,20 @@ function getObjectsVisibleTo(id) {
     const visiblePlayers = {};
 
     for (i in objects) {
-        if (i == id) continue; // skip self
+        
         const object = objects[i];
+        if (object.isPlayer && !object.name) {
+            continue; // skip players without a name
+        }
+
         // Check if the other player is within the viewport bounds
         const buffer = 50; // Add a buffer to the viewport size
         if (
             object.pos.x >= player.pos.x - (viewport.width / 2 + buffer) &&
             object.pos.x <= player.pos.x + (viewport.width / 2 + buffer) &&
             object.pos.y >= player.pos.y - (viewport.height / 2 + buffer) &&
-            object.pos.y <= player.pos.y + (viewport.height / 2 + buffer)
+            object.pos.y <= player.pos.y + (viewport.height / 2 + buffer) 
+            
         ) {
             visiblePlayers[i] = object;
         }
@@ -124,14 +127,8 @@ setInterval(() => {
 
         for (const socketId in players) {
             const visiblePlayers = getObjectsVisibleTo(socketId);
-            //send player list of objects minus themselves
-            const o = {};
-            for (const id in objects) {
-                if (id !== socketId) { // don't send self
-                    o[id] = visiblePlayers[id];
-                }
-            }
-            io.to(socketId).emit('getObjects', o); 
+            
+            io.to(socketId).emit('getObjects', visiblePlayers); 
         }
     }
 
@@ -156,8 +153,7 @@ setInterval(() => {
         const baseDrag = 0.05;
         const dampingFactor = Math.max(0, 1 - (baseDrag / mass) * deltaTime); 
 
-        motion.x *= dampingFactor; // decay motion x
-        motion.y *= dampingFactor; // decay motion y
+        player.motion *= dampingFactor; // decay forward/backward speed
         rotMotion *= dampingFactor; // decay rotation motion
 
         // apply inputs
@@ -169,19 +165,18 @@ setInterval(() => {
         }
 
         if (inputs.includes('ArrowUp') || inputs.includes('w')) {
-            motion.x += Math.cos(rot) * motionAccel; // move forward
-            motion.y += Math.sin(rot) * motionAccel; // move forward
+            player.motion += motionAccel; // accelerate forward
         }
         if (inputs.includes('ArrowDown') || inputs.includes('s')) {
-            motion.x -= Math.cos(rot) * motionAccel; // move backward
-            motion.y -= Math.sin(rot) * motionAccel; // move backward
+            player.motion -= motionAccel; // accelerate backward
         }
 
 
         // apply motion to player position
-        player.pos.x += motion.x * deltaTime;
-        player.pos.y += motion.y * deltaTime;
+        player.pos.x += Math.cos(rot) * player.motion * deltaTime;
+        player.pos.y += Math.sin(-rot) * player.motion * deltaTime;
         player.rot += rotMotion * deltaTime;
+        player.rotMotion = rotMotion; // update stored rotation motion
 
 
     }
@@ -195,6 +190,18 @@ setInterval(() => {
     loopCounter = (loopCounter + 1) % 60;
 }, 1000 / 60); // 60 htz calculation rate
 
+function kickSocket(socketId, message) {
+    const socket = io.sockets.sockets.get(socketId);
+    if (socket) {
+        socket.emit('kick', message); // send kick message to the client
+        socket.disconnect(true); // force disconnect
+        console.log(`Socket ${socketId} has been kicked: ${message}`);
+    } else {
+        console.warn(`Socket ${socketId} not found for kicking.`);
+    }
+}
+
+
 io.on('connection', (socket) => {
     //set default statistics
 
@@ -204,8 +211,8 @@ io.on('connection', (socket) => {
         isPlayer: true, //when objects are fully implemented, this will be used to determine if the object is a player or not
         name: null,
         pos:{x:0,y:0},
-        motion: {x:0,y:0}, 
-        motionConstant: 0.1,
+        motion: 0, //motion is momentum based on direction you are facing.
+        motionConstant: 10,
         inputs: [], // array of input names supplied by client
         mass: 1, // weight affects inertia of player
         rot:0,
@@ -235,6 +242,12 @@ io.on('connection', (socket) => {
     
 
     socket.on('name', (name) => {
+        const maxNameLength = 10; 
+        if (name.length > maxNameLength) { //clients cant be trusted to limit name length
+            console.warn(`Player ${socket.id} tried to set their name to ${name}, which is longer than ${maxNameLength} characters. They may be cheating.`);
+            name = name.substring(0, maxNameLength); // limit name length
+        }
+        
         if (players[socket.id]) {
             players[socket.id].name = name;
         }
