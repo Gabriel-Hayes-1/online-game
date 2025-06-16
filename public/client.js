@@ -123,8 +123,10 @@ socket.on('nameRecieved', (data) => {
    lx = data.pos.x;
    ly = data.pos.y;
 
+
+   
    const spos = { x: worldToViewport([lx, -ly], [data.pos.x, -data.pos.y])[0], y: worldToViewport([lx, -ly], [data.pos.x, -data.pos.y])[1] };
-   const newplayer = new Player(socket.id, spos, data.name);
+   const newplayer = new Player(socket.id, spos, false, data.name);
    DrawingList.push(newplayer);
    newplayer.changeZIndex(4); // Set initial zIndex to 4
 });
@@ -199,39 +201,37 @@ function addObjecttoDrawlist(object) {
 
 
 socket.on("getObjects", (data) => {
+   let timestamp = performance.now()
+
    for (const [key,value] of Object.entries(data)) {
       if (value.id === socket.id) {
          // Update local player position and rotation and skip adding it to the DrawingList
          lx = value.pos.x;
          ly = value.pos.y;
          const meInDrawingList = findDrawingListItemsWithId(socket.id);
-         meInDrawingList.updateData({
+         meInDrawingList.updateInterpolation({
             rot: value.rot,
-         });
+         }, timestamp+67); // Update local player interpolation data
 
          continue;
       }
       
-      if (value.pos.x != 0) {
-         console.log(value.pos.x, value.pos.y);
-      }
+      
       const x = worldToViewport([lx, -ly], [value.pos.x, -value.pos.y]);
       const spos = { x: x[0], y: x[1] };
       const exsistingObject = findDrawingListItemsWithId(value.id);
       if (exsistingObject) {
          // Update existing player data
-         exsistingObject.updateData({
+         exsistingObject.updateInterpolation({
             pos: spos,
-            rot: value.rot,
-            name: value.name,
-            doDrawing: true
-         });
+            rot: value.rot, // Update rotation
+         }, timestamp+67); // Update interpolation data
       } else {
          // Create a new object if it doesn't exist
-         const newPlayer = new Player(value.id, spos, value.name);
+         const newPlayer = new Player(value.id, spos, true, value.name);
          newPlayer.rot = value.rot; // Set rotation
          newPlayer.doDrawing = true; // Set drawing state
-         newPlayer.changeZIndex(4); // Set zIndex for players
+         newPlayer.changeZIndex(3); // Set zIndex for players
          addObjecttoDrawlist(newPlayer);
       }
    }
@@ -240,13 +240,12 @@ socket.on("getObjects", (data) => {
    DrawingList = DrawingList.filter(item => data[item.id] !== undefined || item.id === socket.id);
 });
 
+
+
 socket.on("kick", (message) => {
    alert(message);
-   socket.disconnect(true); // Disconnect the socket
-   enteredName = false; // Reset name entry state
-   nameScreen.style.display = "block"; // Show the name entry screen again
-   DrawingList = []; // Clear the drawing list
-   console.warn(message);
+   socket.disconnect();
+   window.location.reload();
 });
 
 
@@ -315,8 +314,10 @@ function renderLoop() {
    ctx.canvas.width = window.innerWidth;
    ctx.canvas.height = window.innerHeight;
 
+
    //loop through rendering list
    for (const shape of DrawingList) {
+      shape.stepInterpolation(performance.now()); 
       shape.draw(ctx); 
    }
 
@@ -328,10 +329,10 @@ renderLoop();
 document.addEventListener('keydown', (event) => {
    //this is for debugging
    if (event.key === '9') {
-      console.log("DrawingList: ", DrawingList);
+      alert("DrawingList: "+ (DrawingList.length));
    }
    if (event.key === '0') {
-      console.log("lpos: ", lx, ly);
+      alert("lpos: ", lx, ly);
    }
 });
 

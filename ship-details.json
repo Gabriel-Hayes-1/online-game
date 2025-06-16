@@ -1,0 +1,8 @@
+{
+    "starter": {
+        "name": "Starter Ship",
+        "firePower": 10,
+        "speed": 5,
+        "shield": 20,
+    }
+}

@@ -1,10 +1,29 @@
 import { sortDrawList, DrawingList } from './client.js';
 
+function lerp(prevPos, currentPos, alpha) {
+   return prevPos * (1 - alpha) + currentPos * alpha;
+}
+
+
 export class object {
-    constructor(id, pos) {
+    constructor(id, pos,willMove) {
        this.id = id;
+       this.willObjectMove = willMove 
+
        this.pos = pos;
+       this.willObjectMove = false; //toggle for interpolation
+      this.lastPos = { x: pos.x, y: pos.y};
+      this.goalPos = { x: 0, y: 0}; 
+      
+      this.lastTime = 0
+      this.goalTime = 0
+
        this.rot = 0;
+
+      this.lastRot = 0
+      this.goalRot = 0;
+
+
        this.doDrawing = true; // Flag to control drawing
        this.zIndex = 0; // Default zIndex
     }
@@ -12,18 +31,36 @@ export class object {
        this.zIndex = newZIndex;
        sortDrawList(); // Ensure DrawingList is sorted after changing zIndex
     }
-    setDrawState(doDrawing) { 
-    this.doDrawing = doDrawing
-    }
     updateData(newData) {
       //update various data if provided
        this.pos = newData.pos || this.pos; 
        this.rot = newData.rot || this.rot; 
        this.doDrawing = newData.doDrawing !== undefined ? newData.doDrawing : this.doDrawing; 
-
-       
     }
-    
+   updateInterpolation(goalData, goalTime) {
+      this.lastRot = this.rot; 
+      this.goalRot = goalData.rot || this.rot; // Update goal rotation if provided
+
+      this.lastPos = { x: this.pos.x, y: this.pos.y }; // deep copy both to avoid reference issues
+      this.lastTime = performance.now();
+      this.goalPos = { x: goalData.pos.x, y: goalData.pos.y }; 
+      this.goalTime = goalTime || performance.now();
+   }
+   stepInterpolation(currentTimestamp) {
+      if (!this.willObjectMove) {
+         return; // Skip interpolation if the object is not moving
+      }
+      //calculate the alpha value for interpolation
+      const alpha = (currentTimestamp - this.lastTime) / (this.goalTime - this.lastTime);
+      // Interpolate position 
+      this.pos.x = lerp(this.lastPos.x, this.goalPos.x, alpha);
+      this.pos.y = lerp(this.lastPos.y, this.goalPos.y, alpha);
+
+      // Interpolate rotation
+      this.rot = lerp(this.lastRot, this.goalRot, alpha);
+   }
+
+   
     //draw function will be provided in decendant classes
  }
  
@@ -33,6 +70,10 @@ export class Player extends object {
     constructor(id, pos, name) {
        super(id, pos);
        this.name = name;
+       this.willObjectMove = true; 
+       this.lastPos = pos; //this is used for interpolation
+       this.lastTimestamp = 0; // Timestamp of the last update (also for interpolation)
+   
        //rest is inhereted from object
     }
    updateData(newData) {

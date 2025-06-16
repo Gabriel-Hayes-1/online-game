@@ -219,6 +219,8 @@ io.on('connection', (socket) => {
         rotMotion: 0, 
         rotSpeedConstant: 1, // constant for rotation speed
 
+        
+
         viewport:{width:0,height:0}
     };
     objects[socket.id] = players[socket.id]; // add player to objects
