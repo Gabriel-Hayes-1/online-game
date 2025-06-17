@@ -10,13 +10,15 @@ export class object {
        this.id = id;
        this.willObjectMove = willMove 
 
+       this.isDataPresentForInterpolation = false; // Flag to indicate if data is present for interpolation
+
        this.pos = pos;
-       this.willObjectMove = false; //toggle for interpolation
-      this.lastPos = { x: pos.x, y: pos.y};
-      this.goalPos = { x: 0, y: 0}; 
+      this.lastPos = null;
+      console.log("pos ", this.pos, "lastpos ", this.lastPos)
+      this.goalPos = null; 
       
       this.lastTime = 0
-      this.goalTime = 0
+      this.goalTime = performance.now();
 
        this.rot = 0;
 
@@ -31,30 +33,46 @@ export class object {
        this.zIndex = newZIndex;
        sortDrawList(); // Ensure DrawingList is sorted after changing zIndex
     }
-    updateData(newData) {
-      //update various data if provided
-       this.pos = newData.pos || this.pos; 
-       this.rot = newData.rot || this.rot; 
-       this.doDrawing = newData.doDrawing !== undefined ? newData.doDrawing : this.doDrawing; 
-    }
    updateInterpolation(goalData, goalTime) {
-      this.lastRot = this.rot; 
-      this.goalRot = goalData.rot || this.rot; // Update goal rotation if provided
+      if (this.goalPos != null && this.lastPos != null) {
+         this.isDataPresentForInterpolation = true; // Set flag to true if goalPos is provided
+      }
 
-      this.lastPos = { x: this.pos.x, y: this.pos.y }; // deep copy both to avoid reference issues
-      this.lastTime = performance.now();
-      this.goalPos = { x: goalData.pos.x, y: goalData.pos.y }; 
-      this.goalTime = goalTime || performance.now();
+       
+      if (goalData.rot !== undefined) {
+         this.goalRot = goalData.rot || this.rot; // Update goal rotation if provided
+         this.lastRot = this.rot;
+         this.lastTime = performance.now();
+         this.goalTime = goalTime || performance.now();
+      }
+
+      if (goalData.pos !== undefined) {
+         if (this.goalPos != null) {
+            this.lastPos = { x: this.goalPos.x, y: this.goalPos.y}; 
+         }
+         this.goalPos = { x: goalData.pos.x, y: goalData.pos.y }; 
+         this.goalTime = goalTime || performance.now();
+      } 
    }
    stepInterpolation(currentTimestamp) {
       if (!this.willObjectMove) {
-         return; // Skip interpolation if the object is not moving
+         
+         return;
       }
+      if (!this.isDataPresentForInterpolation) {
+         return;
+      }
+
       //calculate the alpha value for interpolation
-      const alpha = (currentTimestamp - this.lastTime) / (this.goalTime - this.lastTime);
+
+
+      const alpha = (currentTimestamp - this.lastTime) / ((this.goalTime) - this.lastTime);
+  
       // Interpolate position 
       this.pos.x = lerp(this.lastPos.x, this.goalPos.x, alpha);
       this.pos.y = lerp(this.lastPos.y, this.goalPos.y, alpha);
+
+
 
       // Interpolate rotation
       this.rot = lerp(this.lastRot, this.goalRot, alpha);
@@ -67,11 +85,9 @@ export class object {
  
  
 export class Player extends object {
-    constructor(id, pos, name) {
-       super(id, pos);
+    constructor(id, pos, willMove, name) {
+       super(id, pos,willMove);
        this.name = name;
-       this.willObjectMove = true; 
-       this.lastPos = pos; //this is used for interpolation
        this.lastTimestamp = 0; // Timestamp of the last update (also for interpolation)
    
        //rest is inhereted from object
@@ -84,6 +100,7 @@ export class Player extends object {
        if (!this.doDrawing) {
           return; // Skip drawing if doDrawing is false
        }
+       
  
        // Save the current context state
        ctx.save();

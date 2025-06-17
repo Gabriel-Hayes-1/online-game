@@ -126,7 +126,8 @@ socket.on('nameRecieved', (data) => {
 
    
    const spos = { x: worldToViewport([lx, -ly], [data.pos.x, -data.pos.y])[0], y: worldToViewport([lx, -ly], [data.pos.x, -data.pos.y])[1] };
-   const newplayer = new Player(socket.id, spos, false, data.name);
+   console.log("Player position set to: ", spos);
+   const newplayer = new Player(socket.id, spos, true, data.name);
    DrawingList.push(newplayer);
    newplayer.changeZIndex(4); // Set initial zIndex to 4
 });
@@ -209,9 +210,12 @@ socket.on("getObjects", (data) => {
          lx = value.pos.x;
          ly = value.pos.y;
          const meInDrawingList = findDrawingListItemsWithId(socket.id);
+         let spos = worldToViewport([lx, -ly], [value.pos.x, -value.pos.y]);
+         spos = { x: spos[0], y: spos[1] }; // Convert to object format
          meInDrawingList.updateInterpolation({
+            pos: spos,
             rot: value.rot,
-         }, timestamp+67); // Update local player interpolation data
+         }, timestamp+68); // Update local player interpolation data
 
          continue;
       }
@@ -225,7 +229,7 @@ socket.on("getObjects", (data) => {
          exsistingObject.updateInterpolation({
             pos: spos,
             rot: value.rot, // Update rotation
-         }, timestamp+67); // Update interpolation data
+         }, timestamp+68); // Update interpolation data
       } else {
          // Create a new object if it doesn't exist
          const newPlayer = new Player(value.id, spos, true, value.name);
