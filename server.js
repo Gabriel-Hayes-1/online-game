@@ -148,9 +148,12 @@ setInterval(() => {
 
         // decay motion towards zero
         const motionAccel = (motionConstant / mass) * deltaTime; 
-        const rotAccel = (rotSpeedConstant / mass) * deltaTime;
+        // Scale rotation acceleration by current speed (absolute value)
+        // Add a small constant (e.g., 0.2) to allow some turning when nearly stopped
+        const speedFactor = (Math.abs(player.motion) + 2)/100;
+        const rotAccel = (rotSpeedConstant / mass) * deltaTime * speedFactor;
 
-        const baseDrag = 0.05;
+        const baseDrag = 0.1;
         const dampingFactor = Math.max(0, 1 - (baseDrag / mass) * deltaTime); 
 
         player.motion *= dampingFactor; // decay forward/backward speed
@@ -171,14 +174,11 @@ setInterval(() => {
             player.motion -= motionAccel; // accelerate backward
         }
 
-
         // apply motion to player position
         player.pos.x += Math.cos(rot) * player.motion * deltaTime;
         player.pos.y += Math.sin(-rot) * player.motion * deltaTime;
         player.rot += rotMotion * deltaTime;
         player.rotMotion = rotMotion; // update stored rotation motion
-
-
     }
 
         

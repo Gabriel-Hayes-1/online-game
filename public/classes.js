@@ -1,131 +1,160 @@
 import { sortDrawList, DrawingList } from './client.js';
 
-function lerp(prevPos, currentPos, alpha) {
-   return prevPos * (1 - alpha) + currentPos * alpha;
+function lerp(prev, goal, alpha) {
+   return prev * (1 - alpha) + goal * alpha;
 }
 
-
 export class object {
-    constructor(id, pos,willMove) {
+    constructor(id, pos, willMove) {
        this.id = id;
-       this.willObjectMove = willMove 
+       this.willObjectMove = willMove;
 
-       this.isDataPresentForInterpolation = false; // Flag to indicate if data is present for interpolation
+       this.isDataPresentForInterpolation = false;
 
        this.pos = pos;
-      this.lastPos = null;
-      console.log("pos ", this.pos, "lastpos ", this.lastPos)
-      this.goalPos = null; 
-      
-      this.lastTime = 0
-      this.goalTime = performance.now();
+       this.last = { pos: { x: pos.x, y: pos.y } };
+       this.goal = { pos: { x: pos.x, y: pos.y } };
 
-       this.rot = 0;
+       this.lastTime = 0;
+       this.goalTime = performance.now();
 
-      this.lastRot = 0
-      this.goalRot = 0;
-
-
-       this.doDrawing = true; // Flag to control drawing
-       this.zIndex = 0; // Default zIndex
+       this.doDrawing = true;
+       this.zIndex = 0;
     }
-    changeZIndex(newZIndex) { //z index is only changeable through this method, requiring sorting each time
+    changeZIndex(newZIndex) {
        this.zIndex = newZIndex;
-       sortDrawList(); // Ensure DrawingList is sorted after changing zIndex
+       sortDrawList();
     }
-   updateInterpolation(goalData, goalTime) {
-      if (this.goalPos != null && this.lastPos != null) {
-         this.isDataPresentForInterpolation = true; // Set flag to true if goalPos is provided
-      }
-
-       
-      if (goalData.rot !== undefined) {
-         this.goalRot = goalData.rot || this.rot; // Update goal rotation if provided
-         this.lastRot = this.rot;
-         this.lastTime = performance.now();
-         this.goalTime = goalTime || performance.now();
+    updateInterpolation(goalData, goalTime) {
+      if (this.goal && this.last) {
+         this.isDataPresentForInterpolation = true;
       }
 
       if (goalData.pos !== undefined) {
-         if (this.goalPos != null) {
-            this.lastPos = { x: this.goalPos.x, y: this.goalPos.y}; 
+         if (this.goal && this.goal.pos) {
+            this.last.pos = { x: this.goal.pos.x, y: this.goal.pos.y };
          }
-         this.goalPos = { x: goalData.pos.x, y: goalData.pos.y }; 
+         this.goal.pos = { x: goalData.pos.x, y: goalData.pos.y };
          this.goalTime = goalTime || performance.now();
-      } 
+      }
    }
    stepInterpolation(currentTimestamp) {
       if (!this.willObjectMove) {
-         
          return;
       }
       if (!this.isDataPresentForInterpolation) {
          return;
       }
 
-      //calculate the alpha value for interpolation
-
-
       const alpha = (currentTimestamp - this.lastTime) / ((this.goalTime) - this.lastTime);
-  
-      // Interpolate position 
-      this.pos.x = lerp(this.lastPos.x, this.goalPos.x, alpha);
-      this.pos.y = lerp(this.lastPos.y, this.goalPos.y, alpha);
 
-
-
-      // Interpolate rotation
-      this.rot = lerp(this.lastRot, this.goalRot, alpha);
+      this.pos.x = lerp(this.last.pos.x, this.goal.pos.x, alpha);
+      this.pos.y = lerp(this.last.pos.y, this.goal.pos.y, alpha);
    }
-
-   
-    //draw function will be provided in decendant classes
+    //draw function will be provided in descendant classes
  }
- 
- 
  
 export class Player extends object {
     constructor(id, pos, willMove, name) {
-       super(id, pos,willMove);
+       super(id, pos, willMove);
        this.name = name;
-       this.lastTimestamp = 0; // Timestamp of the last update (also for interpolation)
-   
-       //rest is inhereted from object
+       this.lastTimestamp = 0;
+       this.rot = 0;
+       this.last.rot = 0;
+       this.goal.rot = 0;
     }
-   updateData(newData) {
-      super.updateData(newData); // Call the parent class's updateData
-      this.name = newData.name || this.name; // Update name if provided
-   }
+    updateInterpolation(goalData, goalTime) {
+      super.updateInterpolation(goalData, goalTime);
+      if (goalData.rot !== undefined) {
+         this.last.rot = this.goal.rot;
+         this.goal.rot = goalData.rot;
+         this.lastTime = performance.now();
+         this.goalTime = goalTime || performance.now();
+      }
+    }
+    stepInterpolation(currentTimestamp) {
+      super.stepInterpolation(currentTimestamp);
+      if (this.goal.rot !== undefined && this.last.rot !== undefined) {
+         const alpha = (currentTimestamp - this.lastTime) / ((this.goalTime) - this.lastTime);
+         this.rot = lerp(this.last.rot, this.goal.rot, alpha);
+      }
+    }
     draw(ctx) {
        if (!this.doDrawing) {
-          return; // Skip drawing if doDrawing is false
+          return;
        }
-       
- 
-       // Save the current context state
        ctx.save();
- 
-       // Translate to the oval's position and rotate the context
        ctx.translate(this.pos.x, this.pos.y);
        ctx.rotate(this.rot);
- 
-       // Draw the oval
        ctx.beginPath();
-       ctx.ellipse(0, 0, 40, 20, 0, 0, Math.PI * 2); // Adjust radii (40, 20) for x and y axes
+       ctx.ellipse(0, 0, 40, 20, 0, 0, Math.PI * 2);
        ctx.fillStyle = "black";
        ctx.fill();
        ctx.closePath();
- 
-       // Restore the context to its original state
        ctx.restore();
- 
-       // draw the text
-       ctx.font = "24px Arial"; 
-       ctx.textAlign = "center"; 
-       ctx.lineWidth = 4; // stroke width
-       ctx.strokeStyle = "white"; // stroke color
-       ctx.strokeText(this.name, this.pos.x, this.pos.y + 40); // Drawing stroke
-       ctx.fillStyle = "black"; // text color
-       ctx.fillText(this.name, this.pos.x, this.pos.y + 40); // Drawing text
+       ctx.font = "24px Arial";
+       ctx.textAlign = "center";
+       ctx.lineWidth = 4;
+       ctx.strokeStyle = "white";
+       ctx.strokeText(this.name, this.pos.x, this.pos.y + 40);
+       ctx.fillStyle = "black";
+       ctx.fillText(this.name, this.pos.x, this.pos.y + 40);
     }
  } 
+
+export class WaterCircle extends object {
+   constructor(id, pos, willMove, size) {
+      super(id, pos, willMove);
+      this.outerRadius = size;
+      this.innerRadius = size * 0.8;
+      this.opacity = 0.5;
+   }
+   updateInterpolation(goalData, goalTime) {
+      super.updateInterpolation(goalData, goalTime);
+
+      if (goalData.outerRadius !== undefined) {
+         this.last.outerRadius = this.goal.outerRadius ?? this.outerRadius;
+         this.goal.outerRadius = goalData.outerRadius;
+      }
+      if (goalData.innerRadius !== undefined) {
+         this.last.innerRadius = this.goal.innerRadius ?? this.innerRadius;
+         this.goal.innerRadius = goalData.innerRadius;
+      }
+      if (goalData.opacity !== undefined) {
+         this.last.opacity = this.goal.opacity ?? this.opacity;
+         this.goal.opacity = goalData.opacity;
+      }
+      this.lastTime = performance.now();
+      this.goalTime = goalTime || performance.now();
+   }
+
+   stepInterpolation(currentTimestamp) {
+      super.stepInterpolation(currentTimestamp);
+
+      const alpha = (currentTimestamp - this.lastTime) / (this.goalTime - this.lastTime);
+
+      if (this.goal.outerRadius !== undefined && this.last.outerRadius !== undefined) {
+         this.outerRadius = lerp(this.last.outerRadius, this.goal.outerRadius, alpha);
+      }
+      if (this.goal.innerRadius !== undefined && this.last.innerRadius !== undefined) {
+         this.innerRadius = lerp(this.last.innerRadius, this.goal.innerRadius, alpha);
+      }
+      if (this.goal.opacity !== undefined && this.last.opacity !== undefined) {
+         this.opacity = lerp(this.last.opacity, this.goal.opacity, alpha);
+      }
+   }
+   draw(ctx) {
+      if (!this.doDrawing) {
+         return;
+      }
+      ctx.save();
+      ctx.globalAlpha = this.opacity;
+      ctx.beginPath();
+      ctx.arc(this.pos.x, this.pos.y, this.outerRadius, 0, Math.PI * 2, false);
+      ctx.arc(this.pos.x, this.pos.y, this.innerRadius, 0, Math.PI * 2, true);
+      ctx.closePath();
+      ctx.fillStyle = "white";
+      ctx.fill("evenodd");
+      ctx.restore();
+   }
+}
