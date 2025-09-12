@@ -31,7 +31,7 @@ menus do not have z indexes as they are made of html elements instead of canvas.
 */
 
 
-import {object, Player} from "./classes.js"; //import classes
+import * as objectType from "./classes.js"; //import classes
 
 
 
@@ -127,7 +127,7 @@ socket.on('nameRecieved', (data) => {
    
    const spos = { x: worldToViewport([lx, -ly], [data.pos.x, -data.pos.y])[0], y: worldToViewport([lx, -ly], [data.pos.x, -data.pos.y])[1] };
    console.log("Player position set to: ", spos);
-   const newplayer = new Player(socket.id, spos, true, data.name);
+   const newplayer = new objectType.Player(socket.id, spos, true, data.name);
    DrawingList.push(newplayer);
    newplayer.changeZIndex(4); // Set initial zIndex to 4
 });
@@ -205,6 +205,7 @@ socket.on("getObjects", (data) => {
    let timestamp = performance.now()
 
    for (const [key,value] of Object.entries(data)) {
+
       if (value.id === socket.id) {
          // Update local player position and rotation and skip adding it to the DrawingList
          lx = value.pos.x;
@@ -228,18 +229,17 @@ socket.on("getObjects", (data) => {
          // Update existing player data
          exsistingObject.updateInterpolation({
             pos: spos,
-            rot: value.rot, // Update rotation
+            rot: value.rot, 
          }, timestamp+68); // Update interpolation data
       } else {
          // Create a new object if it doesn't exist
-         const newPlayer = new Player(value.id, spos, true, value.name);
-         newPlayer.rot = value.rot; // Set rotation
-         newPlayer.doDrawing = true; // Set drawing state
-         newPlayer.changeZIndex(3); // Set zIndex for players
-         addObjecttoDrawlist(newPlayer);
+         const newObj = new objectType[value.className](value.id, spos, true, value.name);
+         newObj.rot = value.rot; 
+         newObj.doDrawing = true; 
+         newObj.changeZIndex(3);
+         addObjecttoDrawlist(newObj);
       }
    }
-
    // Remove objects that are no longer present
    DrawingList = DrawingList.filter(item => data[item.id] !== undefined || item.id === socket.id);
 });

@@ -82,7 +82,6 @@ rl.on('line', (input) => {
                     console.log(`Property ${property} does not exist for player ${setPlayerId}.`);
                 }
             } else {console.log(`Player ${setPlayerId} not found.`); break;}
-            
     }
 });
 
@@ -95,7 +94,7 @@ function getObjectsVisibleTo(id) {
     for (i in objects) {
         
         const object = objects[i];
-        if (object.isPlayer && !object.name) {
+        if (object.className==="Player" && !object.name) {
             continue; // skip players without a name
         }
 
@@ -116,6 +115,9 @@ function getObjectsVisibleTo(id) {
 
 let loopCounter = 0;
 let lastTime = performance.now();
+
+
+
 // main server loop
 setInterval(() => {
     let deltaTime = (performance.now() - lastTime) / 1000 ;
@@ -179,12 +181,35 @@ setInterval(() => {
         player.pos.y += Math.sin(-rot) * player.motion * deltaTime;
         player.rot += rotMotion * deltaTime;
         player.rotMotion = rotMotion; // update stored rotation motion
+
+
+        //summon waterclircles
+        if (loopCounter %10 ==0) {
+            const WaterCircle = {
+                id: crypto.randomUUID(),
+                className: 'WaterCircle',
+                pos: { x: player.pos.x, y: player.pos.y },
+                radius: 10,
+                opacity:0.6
+            }
+            objects[WaterCircle.id] = WaterCircle; // add water circle to objects
+        }
     }
 
-        
-    
-
-
+    //loop through all objects and modify properties for each: any object's properties that change over time should be updated here.
+    for (const id in objects) {
+        switch (objects[id].className) {
+            case 'WaterCircle':
+                // WaterCircle properties can be updated here if needed
+                // For example, you could change the opacity or radius over time
+                objects[id].opacity -= 0.01; // fade out over time
+                objects[id].radius += 0.1; // increase radius over time
+                if (objects[id].opacity <= 0) {
+                    delete objects[id]; // remove the water circle if it fades out completely
+                }
+                break;
+        }
+    }
 
 
     loopCounter = (loopCounter + 1) % 60;
@@ -208,7 +233,7 @@ io.on('connection', (socket) => {
     // (i) all properties including 'constant' are to be stats for the players' ship.
     players[socket.id] = {
         id:socket.id,
-        isPlayer: true, //when objects are fully implemented, this will be used to determine if the object is a player or not
+        className: 'Player', //this is a VERY IMPORTANT property. client need this to know what type of object this is.
         name: null,
         pos:{x:0,y:0},
         motion: 0, //motion is momentum based on direction you are facing.
