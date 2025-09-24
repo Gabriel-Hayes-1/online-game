@@ -1,8 +1,6 @@
-//local copy of player data
-let players = {};
 
-//list of objects canvas should render
-export let DrawingList = [];
+
+let DrawingList = new Map(); //list of objects to draw
 /*
 drawinglist structure:
 
@@ -15,6 +13,8 @@ filled with objects that have a draw method
 let lx = 0
 let ly = 0
 
+let lastServerUpt = performance.now()
+let currServerUpt = performance.now()
 
 /*
 z index layers: 
@@ -38,7 +38,6 @@ import * as objectType from "./classes.js"; //import classes
 
 
 
-
 const socket = io();
 
 
@@ -55,17 +54,14 @@ function pixelDensityResolve(canvas, ctx) { //make the canvas hd
    const dpr = window.devicePixelRatio || 1; 
    const rect = canvas.getBoundingClientRect(); 
 
-   // Set the canvas's internal resolution to match the display's pixel density
    canvas.width = rect.width * dpr;
    canvas.height = rect.height * dpr;
 
-   // Scale the drawing context to match the device pixel ratio
    ctx.scale(dpr, dpr);
 }
 canvas.width = window.innerWidth;
 canvas.height = window.innerHeight;
 
-// Call this function after getting the canvas and context
 pixelDensityResolve(canvas, ctx);
 
 
@@ -81,34 +77,16 @@ let viewportHeight = window.innerHeight;
 
 
 
-function worldToViewport(cameraOrigin, worldPoint) {
-   const [camX, camY] = cameraOrigin;
-   const [x1, y1] = worldPoint;
+function worldToViewport(worldPoint) {
+   let screenX = worldPoint.x - lx + viewportWidth / 2;
+   let screenY = -(worldPoint.y - ly) + viewportHeight / 2;
  
-   let screenX = x1 - camX + viewportWidth / 2;
-   let screenY = y1 - camY + viewportHeight / 2;
- 
-   return [screenX, screenY];
- }
 
 
-function findDrawingListItemsWithId(id) {
-   // Find all items with the matching ID, regardless of class (object, Player, or subclasses)
-   const matches = DrawingList.filter(item => item.id === id);
-
-   // If there are duplicates, remove all but the first match
-   if (matches.length > 1) {
-      for (let i = 1; i < matches.length; i++) {
-         const index = DrawingList.indexOf(matches[i]);
-         if (index > -1) {
-            DrawingList.splice(index, 1); // Remove duplicate
-         }
-      }
-   }
-
-   // Return the first match or undefined if no match is found
-   return matches[0];
+   return {x: screenX, y: screenY};
 }
+
+
 
 
 socket.on("connect", () => {
@@ -123,12 +101,10 @@ socket.on('nameRecieved', (data) => {
    lx = data.pos.x;
    ly = data.pos.y;
 
+   data.pos = worldToViewport(data.pos)
 
-   
-   const spos = { x: worldToViewport([lx, -ly], [data.pos.x, -data.pos.y])[0], y: worldToViewport([lx, -ly], [data.pos.x, -data.pos.y])[1] };
-   console.log("Player position set to: ", spos);
-   const newplayer = new objectType.Player(socket.id, spos, true, data.name);
-   DrawingList.push(newplayer);
+   const newplayer = objectType.object.fromServerData(data);
+   DrawingList.set(socket.id, newplayer);
    newplayer.changeZIndex(4); // Set initial zIndex to 4
 });
 
@@ -140,9 +116,8 @@ document.addEventListener("resize", () => {
    // Update the viewport width and height
    viewportWidth = window.innerWidth;
    viewportHeight = window.innerHeight;
-
+   pixelDensityResolve(canvas, ctx)
    
-
    // Send the new screen size to the server
    socket.emit("screenSize", {width:viewportWidth, height:viewportHeight});
 });
@@ -162,88 +137,91 @@ function sendName() {
    nameInput.value = "";
 }
 
-nameButton.addEventListener("click", () => {
-   sendName();
-});
+nameButton.addEventListener("click", sendName)
 
 nameInput.addEventListener('keydown', function(event) {
    const allowedKeys = ['Backspace', 'ArrowLeft', 'ArrowRight', 'Delete', 'Tab', 'Enter'];
- 
+
    // Allow Enter key to print the placeholder message
    if (event.key === 'Enter') {
-     sendName();
-     return;
+      sendName();
+      return;
    }
- 
+
    // Prevent further typing if max length is reached and not using control keys
    if (
       nameInput.value.length >= maxLength &&
-     !allowedKeys.includes(event.key) &&
-     nameInput.selectionStart === nameInput.selectionEnd // block unless replacing selected text
+      !allowedKeys.includes(event.key) &&
+      nameInput.selectionStart === nameInput.selectionEnd // block unless replacing selected text
    ) {
-     event.preventDefault();
+      event.preventDefault();
    }
- });
+});
 
- const keysPressed = [];
+const keysPressed = [];
 
-
-function addObjecttoDrawlist(object) {
-   // object is any instance of object or its subclasses (like Player)
-   const existingPlayer = findDrawingListItemsWithId(object.id);
-   if (existingPlayer) {
-      // Update all relevant properties directly to keep the reference intact
-      Object.assign(existingPlayer, object);
-   } else {
-      // If it doesn't exist, add to drawlist
-      DrawingList.push(object);
+let bgTiles = [];
+function updateBG() {
+   const lpos = {x: lx, y: ly}
+   if (bgTiles.length <4) {
+      //create new bg tiles: waterpattern class
+      for (let i=0; i<4; i++) {
+         const tile = new waterPattern({pos: {x: (i%2)*canvas.width, y: Math.floor(i/2)*canvas.height}})
+         DrawingList.set(tile.id, tile)
+         bgTiles.push(tile.id)
+      }
    }
 }
 
-
 socket.on("getObjects", (data) => {
-   let timestamp = performance.now()
+   lastServerUpt = currServerUpt || performance.now()
+   currServerUpt = performance.now()
 
    for (const [key,value] of Object.entries(data)) {
-
-      if (value.id === socket.id) {
-         // Update local player position and rotation and skip adding it to the DrawingList
-         lx = value.pos.x;
-         ly = value.pos.y;
-         const meInDrawingList = findDrawingListItemsWithId(socket.id);
-         let spos = worldToViewport([lx, -ly], [value.pos.x, -value.pos.y]);
-         spos = { x: spos[0], y: spos[1] }; // Convert to object format
-         meInDrawingList.updateInterpolation({
-            pos: spos,
-            rot: value.rot,
-         }, timestamp+68); // Update local player interpolation data
-
-         continue;
+      if (key == socket.id) {
+         lx = value.pos.x
+         ly =  value.pos.y
       }
-      
-      
-      const x = worldToViewport([lx, -ly], [value.pos.x, -value.pos.y]);
-      const spos = { x: x[0], y: x[1] };
-      const exsistingObject = findDrawingListItemsWithId(value.id);
-      if (exsistingObject) {
-         // Update existing player data
-         exsistingObject.updateInterpolation({
-            pos: spos,
-            rot: value.rot, 
-         }, timestamp+68); // Update interpolation data
-      } else {
-         // Create a new object if it doesn't exist
-         const newObj = new objectType[value.className](value.id, spos, true, value.name);
-         newObj.rot = value.rot; 
-         newObj.doDrawing = true; 
-         newObj.changeZIndex(3);
-         addObjecttoDrawlist(newObj);
+
+      value.pos = worldToViewport(value.pos)
+
+      let obj = DrawingList.get(key)
+      if (!obj) {
+         obj = objectType.object.fromServerData(value)
+         DrawingList.set(key,obj)
+      } 
+      obj.updateInterpolation(value)
+   }
+
+   for (const id of DrawingList.keys()) {
+      if (!(id in data)) {
+         DrawingList.delete(id)
       }
    }
-   // Remove objects that are no longer present
-   DrawingList = DrawingList.filter(item => data[item.id] !== undefined || item.id === socket.id);
+
 });
 
+
+   
+//MAIN RENDERING LOOP
+function renderLoop() {
+   ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
+   const now = performance.now();
+   const alpha = (now - lastServerUpt) / (currServerUpt - lastServerUpt);
+
+
+   //loop through rendering list
+   const arr = Array.from(DrawingList.values())
+      .sort((a, b) => a.zIndex - b.zIndex)
+      .forEach(shape => {
+         shape.stepInterpolation(alpha);
+         shape.draw(ctx); 
+      });
+
+
+   requestAnimationFrame(renderLoop);
+}
+renderLoop();
 
 
 socket.on("kick", (message) => {
@@ -272,6 +250,8 @@ document.addEventListener("keydown", (event) => {
    if (!keysPressed.includes(event.key)) {
       keysPressed.push(event.key);
    }
+
+
    
 
    socket.emit("input", keysPressed)
@@ -306,38 +286,22 @@ document.addEventListener("mousemove", (event) => {
 
 
 
-export function sortDrawList() {
-   // Sort DrawingList based on zIndex
-   DrawingList.sort((a, b) => a.zIndex - b.zIndex);
-}
-   
-//MAIN RENDERING LOOP
-function renderLoop() {
-   ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
 
-   ctx.canvas.width = window.innerWidth;
-   ctx.canvas.height = window.innerHeight;
-
-
-   //loop through rendering list
-   for (const shape of DrawingList) {
-      shape.stepInterpolation(performance.now()); 
-      shape.draw(ctx); 
-   }
-
-   requestAnimationFrame(renderLoop);
-}
-renderLoop();
 
 
 document.addEventListener('keydown', (event) => {
    //this is for debugging
    if (event.key === '9') {
-      alert("DrawingList: "+ (DrawingList.length));
+      alert("DrawingList: "+ (DrawingList.size));
    }
    if (event.key === '0') {
       alert("lpos: ", lx, ly);
    }
+
+   if (event.key === "j") {
+      console.log("DrawingList: ", DrawingList);
+   }
+
 });
 
 

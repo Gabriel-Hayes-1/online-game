@@ -1,104 +1,67 @@
-import { sortDrawList, DrawingList } from './client.js';
 
 function lerp(prev, goal, alpha) {
    return prev * (1 - alpha) + goal * alpha;
 }
 
 class object {
-    constructor(id, pos) {
-       this.id = id;
+   constructor(data) {
+      this.id = data.id;
+      this.pos = data.pos;
 
-       this.isDataPresentForInterpolation = false;
+      this.prev = {}
+      this.curr = {}
 
-       this.pos = pos;
-       this.last = { pos: { x: pos.x, y: pos.y } };
-       this.goal = { pos: { x: pos.x, y: pos.y } };
-
-       this.lastTime = 0;
-       this.goalTime = performance.now();
-
-       this.doDrawing = true;
-       this.zIndex = 0;
-    }
+      this.doDrawing = true;
+      this.zIndex = 0;
+   }
 
    static fromServerData(data) {
-      const classToCreate = object.classMap[data.className];
+      const classToCreate = classMap[data.className];
       if (!classToCreate) {
          throw new Error(`Unknown class name: ${data.className}`);
       }
-      return classToCreate.fromData(data);
-   }
-
-   static fromData(data) {
-      return new this(data.id)
+      return new classToCreate(data);
    }
 
 
    changeZIndex(newZIndex) {
       this.zIndex = newZIndex;
-      sortDrawList();
    }
 
-   updateInterpolation(goalData, goalTime) {
-      if (this.goal && this.last) {
-         this.isDataPresentForInterpolation = true;
-      }
-
-      if (goalData.pos !== undefined) {
-         if (this.goal && this.goal.pos) {
-            this.last.pos = { x: this.goal.pos.x, y: this.goal.pos.y };
-         }
-         this.goal.pos = { x: goalData.pos.x, y: goalData.pos.y };
-         this.goalTime = goalTime || performance.now();
+   updateInterpolation(serverData) {
+      this.prev = this.curr || serverData
+      this.curr = serverData
+   }
+   
+   stepInterpolation(alpha) {
+      const interpolators = this.constructor.interpolators || {};
+      for (const [key, func] of Object.entries(interpolators)) {
+         this[key] = func(this.prev[key], this.curr[key], alpha);
       }
    }
-   stepInterpolation(currentTimestamp) {
-      if (!this.willObjectMove) {
-         return;
-      }
-      if (!this.isDataPresentForInterpolation) {
-         return;
-      }
 
-      const alpha = (currentTimestamp - this.lastTime) / ((this.goalTime) - this.lastTime);
-
-      this.pos.x = lerp(this.last.pos.x, this.goal.pos.x, alpha);
-      this.pos.y = lerp(this.last.pos.y, this.goal.pos.y, alpha);
+   draw(ctx) {
+      throw new Error("This is an abstract method and should be implemented in subclasses");
    }
-    //draw function will be provided in descendant classes
- }
+}
  
 class Player extends object {
    constructor(data) {
-      super(data.id, data.pos, true);
+      super(data); // id and pos
       this.name = data.name;
-      this.lastTimestamp = 0;
       this.rot = 0;
-      this.last.rot = 0;
-      this.goal.rot = 0;
+      this.zIndex = 4;
    }
 
-   static fromData(data) {
-      return new this(data.id, data.pos, data.willMove, data.name);
+   static interpolators = {
+      pos: (a, b, t) => ({
+         x: lerp(a?.x || 0, b?.x || 0, t),
+         y: lerp(a?.y || 0, b?.y || 0, t)
+      }),
+      rot: (prev, goal, alpha) => lerp(prev, goal, alpha)
    }
 
 
-   updateInterpolation(goalData, goalTime) {
-   super.updateInterpolation(goalData, goalTime);
-   if (goalData.rot !== undefined) {
-      this.last.rot = this.goal.rot;
-      this.goal.rot = goalData.rot;
-      this.lastTime = performance.now();
-      this.goalTime = goalTime || performance.now();
-   }
-   }
-   stepInterpolation(currentTimestamp) {
-   super.stepInterpolation(currentTimestamp);
-   if (this.goal.rot !== undefined && this.last.rot !== undefined) {
-      const alpha = (currentTimestamp - this.lastTime) / ((this.goalTime) - this.lastTime);
-      this.rot = lerp(this.last.rot, this.goal.rot, alpha);
-   }
-   }
    draw(ctx) {
       if (!this.doDrawing) {
          return;
@@ -123,64 +86,69 @@ class Player extends object {
 } 
 
  class WaterCircle extends object {
-   constructor(id, pos, willMove, size) {
-      super(id, pos, willMove);
-      this.outerRadius = size;
-      this.innerRadius = size * 0.8;
-      this.opacity = 0.5;
+   constructor(data) {
+      super(data);
+      this.radius = data.radius;
+      this.opacity = data.opacity;
+      this.zIndex = 3;
    }
 
-   static fromData(data) {
-      return new this(data.id, data.pos, data.willMove, data.size); 
+   static interpolators = {
+      pos: (a, b, t) => ({
+         x: lerp(a?.x || 0, b?.x || 0, t),
+         y: lerp(a?.y || 0, b?.y || 0, t)
+      }),
+      radius: (a, b, t) => lerp(a, b, t),
+      opacity: (a, b, t) => lerp(a, b, t)
    }
 
-   updateInterpolation(goalData, goalTime) {
-      super.updateInterpolation(goalData, goalTime);
 
-      if (goalData.outerRadius !== undefined) {
-         this.last.outerRadius = this.goal.outerRadius ?? this.outerRadius;
-         this.goal.outerRadius = goalData.outerRadius;
-      }
-      if (goalData.innerRadius !== undefined) {
-         this.last.innerRadius = this.goal.innerRadius ?? this.innerRadius;
-         this.goal.innerRadius = goalData.innerRadius;
-      }
-      if (goalData.opacity !== undefined) {
-         this.last.opacity = this.goal.opacity ?? this.opacity;
-         this.goal.opacity = goalData.opacity;
-      }
-      this.lastTime = performance.now();
-      this.goalTime = goalTime || performance.now();
-   }
 
-   stepInterpolation(currentTimestamp) {
-      super.stepInterpolation(currentTimestamp);
-
-      const alpha = (currentTimestamp - this.lastTime) / (this.goalTime - this.lastTime);
-
-      if (this.goal.outerRadius !== undefined && this.last.outerRadius !== undefined) {
-         this.outerRadius = lerp(this.last.outerRadius, this.goal.outerRadius, alpha);
-      }
-      if (this.goal.innerRadius !== undefined && this.last.innerRadius !== undefined) {
-         this.innerRadius = lerp(this.last.innerRadius, this.goal.innerRadius, alpha);
-      }
-      if (this.goal.opacity !== undefined && this.last.opacity !== undefined) {
-         this.opacity = lerp(this.last.opacity, this.goal.opacity, alpha);
-      }
-   }
    draw(ctx) {
       if (!this.doDrawing) {
          return;
       }
       ctx.save();
-      ctx.globalAlpha = this.opacity;
+      ctx.globalAlpha = Math.max(0,this.opacity);
       ctx.beginPath();
-      ctx.arc(this.pos.x, this.pos.y, this.outerRadius, 0, Math.PI * 2, false);
-      ctx.arc(this.pos.x, this.pos.y, this.innerRadius, 0, Math.PI * 2, true);
+      ctx.arc(this.pos.x, this.pos.y, this.radius*0.8, 0, Math.PI * 2, false);
+      ctx.arc(this.pos.x, this.pos.y, this.radius, 0, Math.PI * 2, true);
       ctx.closePath();
       ctx.fillStyle = "white";
       ctx.fill("evenodd");
       ctx.restore();
    }
+}
+class waterPattern {
+   constructor(data) {
+      this.pos = data.pos;
+      this.id = data.id || crypto.randomUUID();
+      this.zIndex = 0;
+      this.image = new Image();
+      this.loaded = false;
+      this.image.src = '/assets/images/waterTexture.jpg';
+      image.onload = () => {
+         this.imgWidth = image.width;
+         this.imgHeight = image.height;
+         this.loaded = true;
+      }
+
+   }
+  
+   setpos(newpos) {
+      this.pos = newpos;
+   }
+
+   draw(ctx) {
+      ctx.drawImage(this.image, 
+         this.pos.x - this.imgWidth/2, 
+         this.pos.y - this.imgHeight/2,
+      );
+   }
+}
+const classMap = {
+   "object": object,
+   "Player": Player,
+   "WaterCircle": WaterCircle
 }
 export { object, Player, WaterCircle };

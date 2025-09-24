@@ -1,7 +1,27 @@
 const express = require('express');
+const http = require('http')
+const os = require('os');
+const { Server } = require("socket.io"); 
+const crypto = require('crypto');
+
 const app = express();
-const http = require('http').createServer(app);
-const io = require('socket.io')(http);
+const server = http.createServer(app);
+const io = new Server(server);
+
+function getLocalIP() {
+    const interfaces = os.networkInterfaces();
+    for (const name of Object.keys(interfaces)) {
+        for (const iface of interfaces[name]) {
+            if (iface.family === 'IPv4' && !iface.internal) {
+                return iface.address;
+            }
+        }
+    }
+    return "127.0.0.1"; // if not connected to a network
+}
+
+const ip = getLocalIP();
+const port = 3000
 
 // (i) players are also found in objects.
 const objects = {};
@@ -139,6 +159,9 @@ setInterval(() => {
 
     //manage player motion, motion decay, and inputs
     for (const socketId in players) {
+        if (objects[socketId].name == null) {
+            continue
+        }
         const player = players[socketId];
         const motion = player.motion;
         const inputs = player.inputs;
@@ -183,27 +206,29 @@ setInterval(() => {
         player.rotMotion = rotMotion; // update stored rotation motion
 
 
-        //summon waterclircles
-        if (loopCounter %10 ==0) {
+        //summon watercircles
+        
+        if (loopCounter % Math.max(Math.floor((1/player.motion)*500),5) === 0) {
             const WaterCircle = {
                 id: crypto.randomUUID(),
                 className: 'WaterCircle',
                 pos: { x: player.pos.x, y: player.pos.y },
                 radius: 10,
-                opacity:0.6
+                opacity:0.6,
+                owner: socketId
             }
             objects[WaterCircle.id] = WaterCircle; // add water circle to objects
         }
+        
     }
 
     //loop through all objects and modify properties for each: any object's properties that change over time should be updated here.
     for (const id in objects) {
         switch (objects[id].className) {
             case 'WaterCircle':
-                // WaterCircle properties can be updated here if needed
-                // For example, you could change the opacity or radius over time
-                objects[id].opacity -= 0.01; // fade out over time
-                objects[id].radius += 0.1; // increase radius over time
+                const speed = players[objects[id].owner] ? Math.abs(players[objects[id].owner].motion) : 0;
+                objects[id].opacity -= 0.005; // fade out over time
+                objects[id].radius += Math.sqrt(objects[id].radius)*(speed/2000)+0.1
                 if (objects[id].opacity <= 0) {
                     delete objects[id]; // remove the water circle if it fades out completely
                 }
@@ -215,7 +240,7 @@ setInterval(() => {
     loopCounter = (loopCounter + 1) % 60;
 }, 1000 / 60); // 60 htz calculation rate
 
-function kickSocket(socketId, message) {
+function kickSocket(socketId, message = 'You have been kicked from the server.') {
     const socket = io.sockets.sockets.get(socketId);
     if (socket) {
         socket.emit('kick', message); // send kick message to the client
@@ -296,9 +321,12 @@ io.on('connection', (socket) => {
     });
 });
 
-const PORT = 3000;
-
-http.listen(PORT, () => {
-    console.log(`Server is running on http://localhost:${PORT}`);
+let host = "127.0.0.1"
+if (ip != "127.0.0.1") {
+    host = "0.0.0.0"
+}
+console.log(host)
+server.listen(port,host, () => {
+    console.log(`Server is running on http://${host==="127.0.0.1"?"localhost":ip}:${port}`);
 });
 
