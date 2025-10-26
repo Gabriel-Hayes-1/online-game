@@ -1,10 +1,14 @@
 function lerp(prev, goal, alpha) {
    return prev * (1 - alpha) + goal * alpha;
 }
-
+function generateUUID() {
+  return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
+    (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
+  );
+}
 class object {
    constructor(data) {
-      this.id = data.id || crypto.randomUUID();
+      this.id = data.id || generateUUID();
       this.pos = data.pos;
       this.lpos = data.pos
 
