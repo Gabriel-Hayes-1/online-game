@@ -9,6 +9,8 @@ var socket = io();
 
 const nameScreen = document.getElementById("name-screen");
 
+
+
 const canvas = document.getElementById("canvas");
 const ctx = canvas.getContext("2d");
 
@@ -35,7 +37,8 @@ DrawingList.set(cam.id, cam)
 
 let enteredName = false;
 
-const maxLength = 10
+let maxLength = 0
+var maxChatLen = 0
 
 
 let viewportWidth = window.innerWidth;
@@ -43,19 +46,32 @@ let viewportHeight = window.innerHeight;
 
 
 
-
+function nameFromID(id) {
+   return DrawingList.get(id)?DrawingList.get(id).name:null
+}
+function teamFromID(id) {
+   return DrawingList.get(id)?DrawingList.get(id).team:null
+}
 
 
 socket.on("connect", () => {
    socket.emit("screenSize", {width:viewportWidth, height:viewportHeight});
 });
+socket.on("config",(data)=>{
+   maxLength = data.maxNameLength
+   maxChatLen = data.maxChatLen
+})
 
 socket.on('nameRecieved', (data) => {
    nameScreen.style.display = "none";
+   chat.style.display="flex"
+   teamSelect.textContent = data.team.charAt(0).toUpperCase() + data.team.slice(1);
+
    enteredName = true;
    
 
-   cam.forceInterpolation({pos:data.pos})
+   cam.forceInterpolation({pos:{x:data.pos.x,y:data.pos.y*-1}})
+
    console.log(cam.pos)
 
    data.pos = data.pos
@@ -64,6 +80,15 @@ socket.on('nameRecieved', (data) => {
    DrawingList.set(socket.id, newplayer);
    newplayer.changeZIndex(4); // Set initial zIndex to 4
 });
+
+socket.on("disconnected",(name)=>{
+   console.log("AAAAAAAAAAAAAAAA")
+   localChatmsg(""+name+" has disconnected.")
+})
+socket.on("connected",(name)=>{
+   console.log("name")
+   localChatmsg(""+name+" has connected.")
+})
 
 
 const nameInput = document.getElementById("name-input");
@@ -132,7 +157,7 @@ socket.on("getObjects", (data) => {
 
       if (!obj) {
          obj = object.fromServerData(value);
-         DrawingList.set(key,obj)
+         DrawingList.set(key,obj);
       }
 
       if (key === socket.id) {
@@ -160,6 +185,7 @@ socket.on("getObjects", (data) => {
          if (DrawingList.get(id).local) continue;
          if (DrawingList.get(id) instanceof camera) continue;
          DrawingList.delete(id) //if key found but no data, that signifies deletion
+         
       }
    }
 });
@@ -187,9 +213,11 @@ let lastTime=performance.now();
 function renderLoop(time) {
    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
    const now = performance.now();
-   const alpha = (now - lastServerUpt) / (currServerUpt - lastServerUpt);
+   let alpha = (now - lastServerUpt) / (currServerUpt - lastServerUpt);
 
-
+   //yeah alpha probably needs to be based on server time but whatever idc
+   
+   alpha = Math.min(alpha,10)
  
    //loop through rendering list
    Array.from(DrawingList.values())
@@ -198,15 +226,12 @@ function renderLoop(time) {
          if (shape.local && shape.tick) {
             if (shape.tick(time - lastTime)) DrawingList.delete(shape.id)
          }
-         if (shape.constructor.name=="lplayer"){ //make exception for localplayer
+         if (shape.constructor.name=="lplayer"){ //make exception for localplayer 
             shape.pos = cam.pos
          }
          if (!shape.local) {
             shape.stepInterpolation(alpha)
          }
-
-         
-
          if (!shape.doDrawing) return;
          shape.draw(ctx);
          shape.drawHitboxes(ctx)
@@ -219,7 +244,7 @@ function renderLoop(time) {
 }
 renderLoop();
 
-
+//ik ts means nothing but server boots you anyways lol 
 socket.on("kick", (message) => {
    alert(message);
    socket.disconnect();
@@ -234,6 +259,8 @@ document.addEventListener("keydown", (event) => {
    if (!enteredName) {
       return;
    }
+   if (document.getElementById("chat-inp")===document.activeElement) return
+   
 
    // Mark the key as pressed
    if (!keysPressed.includes(event.key)) {
@@ -251,6 +278,7 @@ document.addEventListener("keyup", (event) => {
    if (!enteredName) {
       return;
    }
+   //if (document.getElementById("chat-inp")===document.activeElement) return
 
    // Remove the key from the pressed keys array
    const index = keysPressed.indexOf(event.key);
@@ -280,8 +308,10 @@ document.addEventListener("mousemove", (event) => {
 
 document.addEventListener('keydown', (event) => {
    //this is for debugging
+   if (document.getElementById("chat-inp")===document.activeElement) return
+
    if (event.key === '9') {
-      alert("DrawingList: "+ (DrawingList.size));
+      console.log("DrawingList: "+ (DrawingList.size));
    }
    if (event.key === '0') {
       console.log(cam.pos)
@@ -289,9 +319,6 @@ document.addEventListener('keydown', (event) => {
 
    if (event.key === "j") {
       console.log("DrawingList: ", DrawingList);
-   }
-   if (event.key === "l") {
-      console.log(bgTiles)
    }
 
 });

@@ -101,7 +101,7 @@ const blacklistedProperties = [ //List of names of player properties to NOT send
     "inputs",
     "viewport",
     "ipAddr",
-    "cheapHitbox"
+    //"cheapHitbox"
 ]
 
 function getObjectsVisibleTo(id) {
@@ -228,18 +228,18 @@ function cheapHitboxCheck(pid) {
     return hits
 }
 
-function expensiveCollision(id1,id2) {
+function expensiveCollision(id1,id2,dt) {
     if (id1===id2) return null //shouldnt happen, just to make sure
     const obj1 = objects[id1]
     //convert motion ,direction to vx vy
-    const vx = obj1.vecmot.x
-    const vy = obj1.vecmot.y
+    const vx = obj1.motion.x*dt
+    const vy = obj1.motion.y*dt
 
     const obj2 = objects[id2]
     const hitboxes1 = obj1.hitboxes
     const hitboxes2 = obj2.hitboxes
     let minT = 1
-    for (const [id, value] of Object.entries(hitboxes1)) {
+    loop1: for (const [id, value] of Object.entries(hitboxes1)) {
         for (const [id2, value2] of Object.entries(hitboxes2)) {
             //compare each hitcircle to each hitcircle 
             const cos1 = Math.cos(obj1.rot);
@@ -254,8 +254,27 @@ function expensiveCollision(id1,id2) {
 
             const dx = ax-bx
             const dy = ay-by
+            const dist = Math.hypot(dx,dy)
             const r = value.radius + value2.radius
 
+            if (dist<r){
+                //already inside of them, push out, and break completely
+                const overlap = r - dist
+                let vector = {x:0,y:0}
+                if (dist > 0) {
+                    vector.x = dx/dist
+                    vector.y = dy/dist
+                } else {
+                    //chose any direction
+                    vector.x = 1
+                    vector.y = 0
+                }
+                vector.x *= Math.max(overlap,100)
+                vector.y *= Math.max(overlap,100)
+                obj1.motion=vector
+
+                return false
+            }
 
             const a = vx*vx + vy*vy
             const b = 2 * (dx * vx + dy * vy)
@@ -266,21 +285,25 @@ function expensiveCollision(id1,id2) {
                 continue; //no collision
             }
             const t1 = (-b - Math.sqrt(disc)) / (2*a)
-            const t2 = (-b + Math.sqrt(disc)) / (2*a)
+            //const t2 = (-b + Math.sqrt(disc)) / (2*a)
 
             if (t1>=0 && t1<=1){
                 minT = Math.min(minT,t1)
                 continue;
             }
-            if (t2>=0 && t2<=1){
-                minT = Math.min(minT,t2)
-                continue;
-            }
+            // if (t2>=0 && t2<=1){
+            //     minT = Math.min(minT,t2)
+            //     continue;
+            // }
         }        
     }
-    if (minT===1) return 1; //no collision
-    //adjust obj1 position and motion
-    return {x:vx*minT,y:vy*minT}
+    //minT>1 = no collision (not possible tho cuz mint starts at 1)
+    //minT=1 = no collision
+    //minT<1 = collision at minT
+    if (minT==1) return false
+    // console.log(`about to collide: mint:${(minT)}, motion (${Math.round(vx)},${Math.round(vy)})`)
+    //calculate new motion vector
+    return {x: vx * minT,y:vy * minT}
 }
 
 // main server loop
@@ -324,26 +347,26 @@ setInterval(() => {
         const motionConstant = player.motionConstant;
         const rotSpeedConstant = player.rotSpeedConstant;
 
-        const speed = Math.hypot(player.vecmot.x, player.vecmot.y);
-        const maxSpeed = 50
+        const speed = Math.hypot(player.motion.x, player.motion.y);
+        const maxSpeed = 100
         const forward = {x: Math.cos(rot), y: Math.sin(-rot)};
 
         const turnFactor = 0.1; // how quickly velocity aligns with facing
-        player.vecmot.x = (1 - turnFactor) * player.vecmot.x + turnFactor * forward.x * speed;
-        player.vecmot.y = (1 - turnFactor) * player.vecmot.y + turnFactor * forward.y * speed;
+        player.motion.x = (1 - turnFactor) * player.motion.x + turnFactor * forward.x * speed;
+        player.motion.y = (1 - turnFactor) * player.motion.y + turnFactor * forward.y * speed;
 
         // decay motion towards zero
         const thrust = (motionConstant / mass) * deltaTime; 
         // Scale rotation acceleration by current speed (absolute value)
         // Add a small constant (e.g., 0.2) to allow some turning when nearly stopped
         const speedFactor = (Math.abs(speed) + 2)/100;
-        const rotAccel = (rotSpeedConstant / mass) * speedFactor *deltaTime;
+        const rotAccel = Math.max((rotSpeedConstant / mass) * speedFactor,10) *deltaTime;
 
         const baseDrag = 0.1;
         const dampingFactor = Math.max(0, 1 - (baseDrag / mass) * deltaTime); 
 
-        player.vecmot.x *= dampingFactor; 
-        player.vecmot.y *= dampingFactor; 
+        player.motion.x *= dampingFactor; 
+        player.motion.y *= dampingFactor; 
         // reduce rotational motion with same damping, but scale decay by speed:
         // when moving faster, rotation is preserved more; when near-stopped it decays faster.
         const rotSpeedPreserve = Math.max(0.1, Math.abs(speed) / maxSpeed); // minimum preservation so it still decays
@@ -358,38 +381,45 @@ setInterval(() => {
         }
 
         if (inputs.includes('ArrowUp') || inputs.includes('w')) {
-            player.vecmot.x += Math.cos(rot) * thrust;
-            player.vecmot.y += Math.sin(-rot) * thrust;
+            player.motion.x += Math.cos(rot) * thrust;
+            player.motion.y += Math.sin(-rot) * thrust;
         }
         if (inputs.includes('ArrowDown') || inputs.includes('s')) {
-            player.vecmot.x -= Math.cos(rot) * thrust;
-            player.vecmot.y -= Math.sin(-rot) * thrust;
+            player.motion.x -= Math.cos(rot) * thrust;
+            player.motion.y -= Math.sin(-rot) * thrust;
+        }
+
+        const newSpeed = Math.hypot(player.motion.x, player.motion.y);
+        if (newSpeed > maxSpeed) {
+            
+            player.motion.x *= maxSpeed / newSpeed;
+            player.motion.y *= maxSpeed / newSpeed;
         }
 
         //run collision checks
         //first cheap, then advanced
 
         const candidates = cheapHitboxCheck(socketId) //candidates for more detailed check
-        for (let candidate of candidates) {
-            const newvec= expensiveCollision(socketId,candidate)
-            player.vecmot = newvec
+    
+        for (const candidate of candidates) {
+            const newvec= expensiveCollision(socketId,candidate,deltaTime)
+            if (newvec) {
+                player.motion.x = newvec.x
+                player.motion.y = newvec.y
+            }
         }
 
-        const newSpeed = Math.hypot(player.vecmot.x, player.vecmot.y);
-        if (newSpeed > maxSpeed) {
-            player.vecmot.x *= maxSpeed / newSpeed;
-            player.vecmot.y *= maxSpeed / newSpeed;
-        }
+        
+
 
         // apply motion to player position
-        player.pos.x += player.vecmot.x * deltaTime;
-        player.pos.y += player.vecmot.y * deltaTime;
+        player.pos.x += player.motion.x * deltaTime;
+        player.pos.y += player.motion.y * deltaTime;
         player.rot +=(player.rotMotion * deltaTime);
 
         //summon watercircles
         
 
-        
         const minSpeed = 0.01; 
         const clampedSpeed = Math.max(speed, minSpeed);
 
@@ -424,17 +454,41 @@ function kick(socketId, message = 'You have been kicked from the server.') {
     }
 }
 
+function getNextTeam(){
+    let teamCount = {red:0,blue:0}
+    for (let id of Object.keys(players)) {
+        const player = players[id];
+        const team = player.team;
+        if (team) {
+            if (team==="red") teamCount.red++
+            if (team==="blue") teamCount.blue++
+        }
+    }
+    //attempt to balance
+    if (teamCount.red<teamCount.blue){
+        return "red"
+    } else if (teamCount.blue<teamCount.red){
+        return "blue"
+    } else {
+        let a =["red","blue"]
+        return a[Math.floor(Math.random()*2)] //random choice
+    }
+}
+
+const maxNameLength = 30; 
+const maxChatLen = 300;
 
 io.on('connection', (socket) => {
     //set default statistics
 
-    // (i) all properties including 'constant' are to be stats for the players' ship.
+    // all properties including 'constant' are to be stats for the players' ship.
     players[socket.id] = {
         id:socket.id,
         className: 'Player', //this is a VERY IMPORTANT property. client need this to know what type of object this is.
+        team: "none",
         name: null,
         pos:{x:0,y:0}, 
-        vecmot:{x:0,y:0},
+        motion:{x:0,y:0},
         motionConstant: 10,
         inputs: [], // array of input names supplied by client
         mass: 1, // weight affects inertia of player
@@ -458,12 +512,10 @@ io.on('connection', (socket) => {
 
     console.log(`A user connected: ${socket.id}. There are now ${Object.keys(players).length} players connected.`);
 
+    socket.emit("config",{maxNameLength:maxNameLength,maxChatLen:maxChatLen})
+
     socket.on("screenSize", (data) => {
         players[socket.id].viewport = data;
-
-        //send the user player data of the players that are visible to him
-        const visiblePlayers = getObjectsVisibleTo(socket.id);
-        io.to(socket.id).emit('getObjects', visiblePlayers[0]); // send to the user who connected
 
     });
 
@@ -471,10 +523,24 @@ io.on('connection', (socket) => {
         players[socket.id].inputs = inputs
     });
 
-    
+    socket.on('chat',(msg,to)=>{
+        let team = "all"
+        if (to==="team") {
+            team = players[socket.id].team
+        }
+        console.log("got chat, team", team)
+
+        if (typeof msg !== 'string') return; //invalid message
+        if (msg.length > maxChatLen) {
+            //client suspected of cheating; our client code should prevent this
+            console.log(`Player ${socket.id} sent a chat message longer than ${maxChatLen} characters. They may be cheating.`);
+            return
+        }
+        io.to(team).emit('chat',socket.id,msg,team)
+    })
+
 
     socket.on('name', (name) => {
-        const maxNameLength = 10; 
         if (name.length > maxNameLength) { //clients cant be trusted to limit name length
             console.log(`Player ${socket.id} tried to set their name to ${name}, which is longer than ${maxNameLength} characters. They may be cheating.`);
             name = name.substring(0, maxNameLength); // limit name length
@@ -482,22 +548,26 @@ io.on('connection', (socket) => {
         
         if (players[socket.id]) {
             players[socket.id].name = name;
+            players[socket.id].team = getNextTeam();
         }
+        socket.join(players[socket.id].team); //join team room
+        socket.join("all")
+
         console.log(`Player ${socket.id} set name to ${name}`);
-        io.to(socket.id).emit('nameRecieved', players[socket.id]); // send to the user who set the name
+        socket.broadcast.emit('connected',players[socket.id].name); //notify others
+        socket.emit('nameRecieved', players[socket.id]); // send to the user who set the name
 
         
     });
   
-    
+
 
     socket.on('disconnect', () => {
-        console.log('A user disconnected');
-        //remove the socket id from players
+        console.log(`User disconnected: ${socket.id} (${objects[socket.id].name})`);
+        socket.broadcast.emit('disconnected', objects[socket.id].name);
         delete players[socket.id];
         delete objects[socket.id]
         //broadcast who disconnected
-        socket.broadcast.emit('disconnected', { id: socket.id });
     });
 });
 

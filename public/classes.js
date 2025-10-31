@@ -1,10 +1,34 @@
 function lerp(prev, goal, alpha) {
    return prev * (1 - alpha) + goal * alpha;
 }
-function generateUUID() {
+function generateUUID() { //because crypto.randomUUID is inconsistent due to browser support (allegedly)
   return ([1e7]+-1e3+-4e3+-8e3+-1e11).replace(/[018]/g, c =>
     (c ^ crypto.getRandomValues(new Uint8Array(1))[0] & 15 >> c / 4).toString(16)
   );
+}
+function drawHitbox(self,hb,col="rgba(255,0,0,0.6)"){
+   let fpos
+   if (hb.offset) {
+      const ox = hb.offset.x || 0;
+      const oy = hb.offset.y || 0;
+      const r = self.rot || 0;
+      const cos = Math.cos(r);
+      const sin = Math.sin(r);
+      const rx = ox * cos - oy * sin;
+      const ry = ox * sin + oy * cos;
+      fpos = { x: (self.lpos?.x || 0) + rx, y: (self.lpos?.y || 0) + ry };
+   } else {
+      fpos = { x: (self.lpos?.x || 0), y: (self.lpos?.y || 0) };
+   }
+   
+
+   ctx.save();
+   ctx.beginPath();
+   ctx.arc(fpos.x, fpos.y, hb.radius || 0, 0, Math.PI * 2);
+   ctx.strokeStyle = col;
+   ctx.lineWidth = 2;
+   ctx.stroke();
+   ctx.restore();
 }
 class object {
    constructor(data) {
@@ -16,6 +40,7 @@ class object {
       this.curr = {};
       
       this.hitboxes = data.hitboxes||[]
+      if(data.cheapHitbox)this.cheapHitbox=data.cheapHitbox
 
       this.doDrawing = true;
       this.zIndex = 0;
@@ -60,28 +85,11 @@ class object {
       //this is in parent class, since its the same for all classes.
       if (!hitbox) return
       for (const hb of this.hitboxes){
-         let fpos
-         if (hb.offset) {
-            const ox = hb.offset.x || 0;
-            const oy = hb.offset.y || 0;
-            const r = this.rot || 0;
-            const cos = Math.cos(r);
-            const sin = Math.sin(r);
-            const rx = ox * cos - oy * sin;
-            const ry = ox * sin + oy * cos;
-            fpos = { x: (this.lpos?.x || 0) + rx, y: (this.lpos?.y || 0) + ry };
-         } else {
-            fpos = { x: (this.lpos?.x || 0), y: (this.lpos?.y || 0) };
-         }
-         
-
-         ctx.save();
-         ctx.beginPath();
-         ctx.arc(fpos.x, fpos.y, hb.radius || 0, 0, Math.PI * 2);
-         ctx.strokeStyle = "rgba(255,0,0,0.6)";
-         ctx.lineWidth = 2;
-         ctx.stroke();
-         ctx.restore();
+         drawHitbox(this,hb)
+      }
+      const chH=this.cheapHitbox
+      if (chH){
+         drawHitbox(this,chH,"rgba(0,255,0,0.6)")
       }
    }
 }
@@ -90,6 +98,7 @@ class Player extends object {
    constructor(data) {
       super(data); // id and pos
       this.name = data.name;
+      this.team = data.team
       this.rot = 0;
       this.zIndex = 4;
       this.local = data.local || false;
@@ -213,7 +222,8 @@ class waterPattern extends object{
       this.image = new Image();
       this.visible = true;
       this.image.src = '/assets/images/waterTexture.jpeg';
-      this.imgSize = {x:window.innerWidth/2,y:window.innerWidth/2}
+      const largerSide = Math.max(window.innerWidth,window.innerHeight)
+      this.imgSize = {x:largerSide/2,y:largerSide/2}
    }
    static initialize() {
       for (let i=0; i<9; i++) {

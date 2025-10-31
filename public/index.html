@@ -20,11 +20,28 @@
             </div>
         </div>
         <div id="game-space">
-            
+            <div id="chat">
+                <div id="msg">
+                    
+                </div>
+                <div id="inp">
+                    <select name="channel" id="chat-sel">
+                        <option value="all">All</option>
+                        <option value="team" id="selectTeamName">team</option>
+                    </select>
+                    <input type="text" id="chat-inp">
+                    <button id="chat-send"></button>
+                </div>
+                <div id="chat-toggle">
+                    <button id="chat-hide-button"></button>
+                </div>
+            </div>
+
             <canvas id="canvas"></canvas>
         </div>
         <script src="/socket.io/socket.io.js"></script>
         <script src="classes.js"></script>
         <script src="client.js"></script>
+        <script src="chat.js"></script>
     </body>
 </html>

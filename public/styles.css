@@ -94,14 +94,146 @@ h1 {
     height: 100%;
     overflow: hidden; 
 }
-
-
-
 #canvas {
     background-color: #1DAEFF;
     position: absolute;
     width: 100%;
     height: 100%;
-    z-index: 5;
+    z-index: 0;
+}
+#chat {
+    
+    position: absolute;
+    z-index: 1;
+    top:5px;
+    left:5px;
+    background-color: rgba(0, 0, 0, 0.5);
+    width: 30%;
+    height: 30%;
+    display: none;
+    flex-direction: column;
+    gap: 5px;
+    transform:translateY(0px);
+    transition: transform 0.6s;
+}
+#chat #msg {
+    z-index: -2;
+    display: flex;
+    flex: 1;
+    flex-direction: column;
+    overflow-y: auto;
+    background-color: rgba(0, 0, 0,0.3);
+    padding: 5px;
+    padding-bottom: 40px;
+}
+.chat-from {
+    font-weight: bold;
+    font-family: monospace;
+    color:#fff;
+}
+.chat-msg {
+    font-family: monospace;
+    color:#fff;
+}
+.system-message {
+    font-family: monospace;
+    font-style: italic;
+    color:#aaa;
+}
+#chat #inp {
+    display: flex;
+    flex-direction: row;
+    gap: 5px;
+    position:absolute;
+    bottom: 5px;
+    height: 25px;
+
+    left: 5px;
+    right: 5px;
+
+    background-color: #dddddd;
+    border-radius: 12.5px;
+}
+#chat #inp::before {
+    z-index: -1;
+    content: "";
+    position: absolute;
+    top: -10px;
+    left: -5px;
+    right: -5px;
+    bottom: -5px;
+    background: linear-gradient(to top,rgb(0,0,0), rgba(0,0,0,0));
+    pointer-events: none; /* gradient doesn’t block clicks */
+}
+#chat-inp {
+    outline: none;
+    border: none;
+    border-radius: inherit;
+    width: 50px;
+    padding-left: 10px;
+    flex: 1;
+}
+#chat-sel {
+    background-color: #fff;
+    width: 60px;
+    cursor: pointer;
+    outline: none;
+    border: none;
+    border-radius: inherit;
+}
+#chat-sel option {
+    outline: none;
+    border: none;
 }
 
+
+#chat-send {
+    outline: none;
+    border: none;
+    border-radius: inherit;
+    background-color: #fff;
+    background-image: url("/assets/images/send.svg");
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 60% 60%;
+    aspect-ratio: 1/1;
+    cursor: pointer;
+}
+#chat-send:hover {
+    background-color: #ccc;
+}
+#chat-toggle {
+    position: absolute;
+    left: 50%;
+    top: 100%;
+    transform: translateX(-50%);
+    width: 20px;
+    height: 15px;
+    background-color: #ccccff;
+    border: none;
+    border-bottom-left-radius: 12.5px;
+    border-bottom-right-radius: 12.5px;
+    box-shadow: 0 2px 4px rgba(0,0,0,0.2);
+}
+#chat-hide-button {
+    border: none;
+    outline: none;
+    width: 100%;
+    height: 100%;
+    background-image: url("/assets/images/chat-toggle.svg");
+    background-color: transparent;
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: contain;
+    cursor: pointer;
+    border: inherit;
+    transition: transform 0.3s ease;
+}
+#chat-hide-button.rotate {
+    transform: rotate(180deg);
+}
+
+
+#chat.hidden {
+    transform:translateY(-100%) translateY(-5px);
+}
