@@ -9,20 +9,30 @@
         
         
     </head>
-    <body>
-        <div id="name-screen">
-            <div id="vert-cont">
+    <body> <!-- name screen and dead are not part of the game, as they will contain ads (gotta pay the bills)-->
+        <div class="name-screen">
+            <div class="vert-cont">
                 <h1>Enter your username:</h1>
-                <div id="name-container">
+                <div class="name-container">
                     <input type="text" id="name-input" placeholder="Enter your name">
                     <button id="name-button">→</button>
                 </div>
             </div>
         </div>
+        <div id="dead">
+            <div class="vert-cont">
+                <h1>You were sunk by <span id="killName">player</span> (<span id="causeOfDeath">torpedo</span>)</h1>
+                <h2> Score: <span id="score">0</span></h2>
+                <div class="name-container">
+                    <input type="text" id="dead-input" placeholder="Enter your name">
+                    <button id="dead-button">→</button>
+                </div>
+            </div>
+        </div>
         <div id="game-space">
-            <div id="chat">
+
+            <div id="chat" class="hidden">
                 <div id="msg">
-                    
                 </div>
                 <div id="inp">
                     <select name="channel" id="chat-sel">
@@ -37,11 +47,22 @@
                 </div>
             </div>
 
+            <div id="warnings" class="hidden">
+                
+            </div>
+
+            <div id="player-info">
+                <div id="name">name here</div>
+                <div id="subtitle">subtitle here</div>
+                <progress id="health" max="100" value="50"></progress>
+            </div>
+
+
             <canvas id="canvas"></canvas>
         </div>
         <script src="/socket.io/socket.io.js"></script>
         <script src="classes.js"></script>
         <script src="client.js"></script>
-        <script src="chat.js"></script>
+        <script src="ui.js"></script>
     </body>
 </html>

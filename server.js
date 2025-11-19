@@ -30,6 +30,18 @@ const rl = require('readline').createInterface({
 rl.on('line', (input) => {
     input = input.trim();
     switch (true) {
+        case input.startsWith('damageAll'): {
+            const parts = input.split(' ');
+            const parsed = parseInt(parts[1], 10);
+            const amount = Number.isNaN(parsed) ? 10 : parsed;
+            for (const socketid of Object.keys(players)) {
+                if (objects[socketid] && typeof objects[socketid].health === 'number') {
+                    objects[socketid].health -= amount;
+                }
+            }
+            console.log(`damaged all for ${amount} damage`);
+            break;
+        }
         case input === 'data get':
             console.log('Current player data:');
             console.log(JSON.stringify(players));
@@ -97,12 +109,7 @@ rl.on('line', (input) => {
     }
 });
 
-const blacklistedProperties = [ //List of names of player properties to NOT send to anyone.
-    "inputs",
-    "viewport",
-    "ipAddr",
-    //"cheapHitbox"
-]
+
 
 function getObjectsVisibleTo(id) {
     const player = objects[id];
@@ -114,7 +121,7 @@ function getObjectsVisibleTo(id) {
     for (i in objects) {
         
         const object = objects[i];
-        if (object.className==="Player" && !object.name) {
+        if (object.className==="Player" && object.state!='alive') {
             continue; // skip players without a name
         }
 
@@ -145,7 +152,9 @@ function getObjectsVisibleTo(id) {
 }
 
 
+
 let lastSent = {};
+
 /* 
 lastSent: {
     playerid:{
@@ -317,16 +326,18 @@ setInterval(() => {
 
         for (const socketId in players) {
             const visible = getObjectsVisibleTo(socketId);
-            let delta = buildDelta(visible[0],lastSent[socketId])
-            for (const id in delta) {
-                delta[id] = cleanData(delta[id]);
-            }
-            io.to(socketId).emit('getObjects', delta); 
+            if (visible) {
+                let delta = buildDelta(visible[0],lastSent[socketId])
+                for (const id in delta) {
+                    delta[id] = cleanData(delta[id]);
+                }
+                io.to(socketId).emit('getObjects', delta); 
 
-            if (visible[1].length > 0) {
-                io.to(socketId).emit('getEvents', visible[1])
+                if (visible[1].length > 0) {
+                    io.to(socketId).emit('getEvents', visible[1])
+                }
+                lastSent[socketId] = structuredClone(visible[0])
             }
-            lastSent[socketId] = structuredClone(visible[0])
         }
         events = []; //clear events after sending them to every player
     }
@@ -417,25 +428,36 @@ setInterval(() => {
         player.pos.y += player.motion.y * deltaTime;
         player.rot +=(player.rotMotion * deltaTime);
 
+        // check death
+        if (player.health <= 0 ) {
+            player.state = "dead"
+            player.health = 0
+            io.to(socketId).emit("death",{score:0,cause:'kill',player:null,method:'',name:player.name})
+        }
+
+
         //summon watercircles
         
+        if (player.state == 'alive') {
+            const minSpeed = 0.01; 
+            const clampedSpeed = Math.max(speed, minSpeed);
 
-        const minSpeed = 0.01; 
-        const clampedSpeed = Math.max(speed, minSpeed);
+            // adjust scalingFactor for density
+            const scalingFactor = 500; 
+            const interval = Math.max(Math.floor(scalingFactor / clampedSpeed), 5);
 
-        // adjust scalingFactor for density
-        const scalingFactor = 500; 
-        const interval = Math.max(Math.floor(scalingFactor / clampedSpeed), 5);
-
-        if (loopCounter % interval === 0) {
-            const WaterCircle = {
-                id: crypto.randomUUID(),
-                type: 'WaterCircle',
-                pos: { x: player.pos.x, y: player.pos.y },
-                owner: socketId
-            };
-            events.push(WaterCircle);
+            if (loopCounter % interval === 0) {
+                const WaterCircle = {
+                    id: crypto.randomUUID(),
+                    type: 'WaterCircle',
+                    pos: { x: player.pos.x, y: player.pos.y },
+                    owner: socketId
+                };
+                events.push(WaterCircle);
+            }
         }
+
+        
         
     }
 
@@ -478,6 +500,14 @@ function getNextTeam(){
 const maxNameLength = 30; 
 const maxChatLen = 300;
 
+
+const blacklistedProperties = [ //List of names of player properties to not send to anyone.
+    "inputs",
+    "viewport",
+    "ip",
+    //"cheapHitbox"
+]
+
 io.on('connection', (socket) => {
     //set default statistics
 
@@ -485,7 +515,12 @@ io.on('connection', (socket) => {
     players[socket.id] = {
         id:socket.id,
         className: 'Player', //this is a VERY IMPORTANT property. client need this to know what type of object this is.
+        ip: socket.handshake.address,
+        admin: false, 
+        state: "noname", // states: noname, alive, dead, spectating
         team: "none",
+        zoom:1, 
+        health:100,
         name: null,
         pos:{x:0,y:0}, 
         motion:{x:0,y:0},
@@ -528,41 +563,50 @@ io.on('connection', (socket) => {
         if (to==="team") {
             team = players[socket.id].team
         }
-        console.log("got chat, team", team)
 
         if (typeof msg !== 'string') return; //invalid message
         if (msg.length > maxChatLen) {
             //client suspected of cheating; our client code should prevent this
             console.log(`Player ${socket.id} sent a chat message longer than ${maxChatLen} characters. They may be cheating.`);
+            
             return
         }
-        io.to(team).emit('chat',socket.id,msg,team)
+        io.to(team).emit('chat',{name:players[socket.id].name,team:players[socket.id].team},msg,team)
     })
 
 
     socket.on('name', (name) => {
-        if (name.length > maxNameLength) { //clients cant be trusted to limit name length
-            console.log(`Player ${socket.id} tried to set their name to ${name}, which is longer than ${maxNameLength} characters. They may be cheating.`);
-            name = name.substring(0, maxNameLength); // limit name length
-        }
+        const player = players[socket.id]
+        if (players[socket.id].state == "noname" || players[socket.id].state=="dead") { //must be dead or no name to change name
+
+            if (name.length > maxNameLength) { //clients cant be trusted to limit name length
+                console.log(`Player ${socket.id} tried to set their name to ${name}, which is longer than ${maxNameLength} characters. They may be cheating.`);
+                name = name.substring(0, maxNameLength); // limit name length
+            }
+            
+            if (player) {
+                player.name = name;
+                player.state = "alive"
+                if (player.team = 'none') {
+                    player.team = getNextTeam();
+                }
+            }
+            socket.join(player.team); //join team room
+            socket.join("all")
+
+            console.log(`Player ${socket.id} set name to ${name}`);
+            
+            socket.broadcast.emit('connected',player.name); //notify others
+            socket.emit('nameRecieved', player); // send to the user who set the name
         
-        if (players[socket.id]) {
-            players[socket.id].name = name;
-            players[socket.id].team = getNextTeam();
         }
-        socket.join(players[socket.id].team); //join team room
-        socket.join("all")
-
-        console.log(`Player ${socket.id} set name to ${name}`);
-        socket.broadcast.emit('connected',players[socket.id].name); //notify others
-        socket.emit('nameRecieved', players[socket.id]); // send to the user who set the name
-
         
     });
   
 
 
     socket.on('disconnect', () => {
+        if (!objects[socket.id]) return; //socket exsists without entry?
         console.log(`User disconnected: ${socket.id} (${objects[socket.id].name})`);
         socket.broadcast.emit('disconnected', objects[socket.id].name);
         delete players[socket.id];

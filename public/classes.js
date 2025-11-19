@@ -7,28 +7,7 @@ function generateUUID() { //because crypto.randomUUID is inconsistent due to bro
   );
 }
 function drawHitbox(self,hb,col="rgba(255,0,0,0.6)"){
-   let fpos
-   if (hb.offset) {
-      const ox = hb.offset.x || 0;
-      const oy = hb.offset.y || 0;
-      const r = self.rot || 0;
-      const cos = Math.cos(r);
-      const sin = Math.sin(r);
-      const rx = ox * cos - oy * sin;
-      const ry = ox * sin + oy * cos;
-      fpos = { x: (self.lpos?.x || 0) + rx, y: (self.lpos?.y || 0) + ry };
-   } else {
-      fpos = { x: (self.lpos?.x || 0), y: (self.lpos?.y || 0) };
-   }
    
-
-   ctx.save();
-   ctx.beginPath();
-   ctx.arc(fpos.x, fpos.y, hb.radius || 0, 0, Math.PI * 2);
-   ctx.strokeStyle = col;
-   ctx.lineWidth = 2;
-   ctx.stroke();
-   ctx.restore();
 }
 class object {
    constructor(data) {
@@ -39,8 +18,17 @@ class object {
       this.prev = {};
       this.curr = {};
       
-      this.hitboxes = data.hitboxes||[]
-      if(data.cheapHitbox)this.cheapHitbox=data.cheapHitbox
+      this.accessories = this.accessories || [];
+
+      const hitboxes = data.hitboxes || [];
+      const hitboxObjects = Hitbox.fromArray(hitboxes);
+
+      // handle cheapHitbox 
+      const cheapHitboxObject = data.cheapHitbox ? [new Hitbox(data.cheapHitbox, 'rgba(0,255,0,0.5)')] : [];
+
+      // merge both
+      this.accessories = hitboxObjects.concat(cheapHitboxObject);
+
 
       this.doDrawing = true;
       this.zIndex = 0;
@@ -54,6 +42,9 @@ class object {
       return new classToCreate(data);
    }
 
+   addAccessory(AccObj){
+      this.accessories.push(AccObj)
+   }
 
    changeZIndex(newZIndex) {
       this.zIndex = newZIndex;
@@ -78,19 +69,102 @@ class object {
       }
    }
 
+   static ServerSetVals = ['accessories','hitboxes','cheapHitbox']
+
+   updateValues(values) {
+      for (const [key, val] of Object.entries(values)) {
+         if (this.constructor.ServerSetVals.includes(key)) {
+            this[key] = val;
+         }
+      }
+   }
+
    draw(ctx) {
       throw new Error("This is an abstract method and should be implemented in subclasses");
    }
-   drawHitboxes(ctx){
+   drawAccessories(ctx){
       //this is in parent class, since its the same for all classes.
-      if (!hitbox) return
-      for (const hb of this.hitboxes){
-         drawHitbox(this,hb)
+      for (const acc of this.accessories){
+         acc.draw(ctx,this)
       }
-      const chH=this.cheapHitbox
-      if (chH){
-         drawHitbox(this,chH,"rgba(0,255,0,0.6)")
+   }
+}
+
+
+
+class Accessory {
+   //hook on to objects using object's accessory lists
+   constructor(data) {
+      this.offset = data.offset
+   }
+   
+   getPos(parentElem) {
+      //method to get real pos based off of offset and parent pos and rot (if exsists)
+      const ox = this.offset.x || 0;
+      const oy = this.offset.y || 0;
+
+      const r = parentElem.rot || 0;
+      const cos = Math.cos(r);
+      const sin = Math.sin(r);
+
+      const rx = ox * cos - oy * sin;
+      const ry = ox * sin + oy * cos;
+
+      return { x: parentElem.lpos.x + rx, y: parentElem.lpos.y + ry };
+   }
+
+   draw(ctx,parent){
+      //abstract method
+   }
+}
+class Hitbox extends Accessory {
+   constructor(data,color="rgba(255,0,0,0.5)"){
+      super(data)
+      this.radius = data.radius||0
+      this.color = color
+   }
+   static fromArray(arr){
+      //return list of hitbox instances from an array like [{offset:{x,y},radius:10}]
+      return arr.map(hbData=>new Hitbox(hbData))
+   }
+   draw(ctx,parent) {
+      if (!hitbox) return //boolean value to draw hitboxes or not
+      let fpos = this.getPos(parent)
+      
+      ctx.save();
+      ctx.beginPath();
+      ctx.arc(fpos.x, fpos.y, this.radius || 0, 0, Math.PI * 2);
+      ctx.strokeStyle = this.color;
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      ctx.restore();
+   }
+}
+class Turret extends Accessory {
+   static maxLongSide = 50
+   constructor(data) {
+      super(data)
+      this.offset.x +=10
+      this.rot = data.rot||0;
+      this.img = new Image();
+      this.img.src = '/assets/images/turret.png';
+      this.imageLoaded = false
+      this.img.onload = ()=>{
+         this.imageLoaded = true       
+         this.scale = Turret.maxLongSide/Math.max(this.img.width,this.img.height) 
+         console.log(this.scale) 
       }
+   }
+   draw(ctx,parent){
+      if (!this.imageLoaded) return;
+      const fpos = this.getPos(parent)
+      ctx.save();
+      ctx.translate(fpos.x,fpos.y)
+      ctx.rotate(this.rot + (parent.rot||0)+(90*Math.PI/180))
+      ctx.drawImage(this.img,this.img.width/-2*this.scale,this.img.height/-2*this.scale,
+         this.img.width*this.scale,this.img.height*this.scale
+      )
+      ctx.restore();
    }
 }
  
@@ -99,12 +173,24 @@ class Player extends object {
       super(data); // id and pos
       this.name = data.name;
       this.team = data.team
+      this._health = data.health
       this.rot = 0;
       this.zIndex = 4;
       this.local = data.local || false;
       
+      this.addAccessory(new Turret({offset:{x:20,y:0},rot:0}))
+      this.addAccessory(new Turret({offset:{x:-20,y:0},rot:0}))
       
    }
+
+   set health(newvalue) {
+      this._health = newvalue
+   }
+   get health() {
+      return this._health
+   }
+
+   static ServerSetVals = [...object.ServerSetVals, 'health']
 
    static interpolators = {
       pos: (a, b, t) => ({
@@ -114,7 +200,7 @@ class Player extends object {
       rot: (prev, goal, alpha) => lerp(prev, goal, alpha)
    }
 
-
+   
 
    draw(ctx) {
       if (!this.doDrawing) {
@@ -142,6 +228,11 @@ class Player extends object {
 class lplayer extends Player {
    constructor(data){
       super(data)
+      playerInfoHealth.value = data.health
+   }
+   set health(newvalue) {
+      playerInfoHealth.value = newvalue
+      this._health = newvalue
    }
    static interpolators = {
       rot: (prev, goal, alpha) => lerp(prev, goal, alpha)
@@ -152,6 +243,7 @@ class camera extends object {
    constructor(data) {
       super(data)
       this.nonIntPos = {x:0,y:0}
+      this.target = data.target
       this.doDrawing = false;
       this.local = data.local || false; 
       this.canvas = data.canvas.getBoundingClientRect();
@@ -219,8 +311,8 @@ class waterPattern extends object{
       this.tilenum = data.tilenum
       this.zIndex = 0;
       this.local = true; //very important: prevents deletion by server update
-      this.image = new Image();
       this.visible = true;
+      this.image = new Image();
       this.image.src = '/assets/images/waterTexture.jpeg';
       const largerSide = Math.max(window.innerWidth,window.innerHeight)
       this.imgSize = {x:largerSide/2,y:largerSide/2}
@@ -241,10 +333,6 @@ class waterPattern extends object{
       this.pos = cam.worldToViewport({x:(tx+tileX)*this.imgSize.x,y:(ty+tileY)*this.imgSize.y})
 
    }
-   
-   
-   
-
    draw(ctx) {
       ctx.drawImage(this.image, 
          this.pos.x - (this.imgSize.x/2),
@@ -254,9 +342,6 @@ class waterPattern extends object{
       );
    }
 }
-
-
-
 const classMap = { //local objects dont need to be here
    "object": object,
    "Player": Player,

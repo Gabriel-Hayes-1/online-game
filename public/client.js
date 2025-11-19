@@ -7,7 +7,6 @@ let currServerUpt = performance.now()
 
 var socket = io();
 
-const nameScreen = document.getElementById("name-screen");
 
 
 
@@ -32,10 +31,10 @@ canvas.height = window.innerHeight;
 
 pixelDensityResolve(canvas, ctx);
 
-const cam = new camera({pos:{x:0,y:0},id:"cam",canvas})
+const cam = new camera({pos:{x:0,y:0},id:"cam",canvas:canvas,target:null})
 DrawingList.set(cam.id, cam)
 
-let enteredName = false;
+var enteredName = false;
 
 let maxLength = 0
 var maxChatLen = 0
@@ -63,30 +62,28 @@ socket.on("config",(data)=>{
 })
 
 socket.on('nameRecieved', (data) => {
-   nameScreen.style.display = "none";
-   chat.style.display="flex"
-   teamSelect.textContent = data.team.charAt(0).toUpperCase() + data.team.slice(1);
+   nameRecievedUI(data)
+   
 
    enteredName = true;
    
 
    cam.forceInterpolation({pos:{x:data.pos.x,y:data.pos.y*-1}})
 
-   console.log(cam.pos)
 
    data.pos = data.pos
    data.local = false;
    const newplayer = new lplayer(data);
    DrawingList.set(socket.id, newplayer);
+
    newplayer.changeZIndex(4); // Set initial zIndex to 4
+   
 });
 
 socket.on("disconnected",(name)=>{
-   console.log("AAAAAAAAAAAAAAAA")
    localChatmsg(""+name+" has disconnected.")
 })
 socket.on("connected",(name)=>{
-   console.log("name")
    localChatmsg(""+name+" has connected.")
 })
 
@@ -139,7 +136,6 @@ nameInput.addEventListener('keydown', function(event) {
    }
 });
 
-const keysPressed = [];
 
 waterPattern.initialize()
 
@@ -160,7 +156,9 @@ socket.on("getObjects", (data) => {
          DrawingList.set(key,obj);
       }
 
-      if (key === socket.id) {
+      obj.updateValues(value) //process non-interpolated data like health (not related to movement)
+
+      if (key === socket.id) { //handle special case
          if (value.pos) {
             value.pos.y *=-1
             cam.updateInterpolation({pos:value.pos})
@@ -175,7 +173,8 @@ socket.on("getObjects", (data) => {
       if (value.pos) {
          value.pos.y *=-1; //y flippage due to +Y being down on client, and up on server
          value.pos = value.pos; //store worldpos on objects, they handle worldtoviewport themselves
-      }
+      } 
+
 
       obj.updateInterpolation(value)
    }
@@ -184,7 +183,8 @@ socket.on("getObjects", (data) => {
       if (!Object.hasOwn(data,id)) {
          if (DrawingList.get(id).local) continue;
          if (DrawingList.get(id) instanceof camera) continue;
-         DrawingList.delete(id) //if key found but no data, that signifies deletion
+         DrawingList.delete(id) //if key found but no data, that signifies deletion. 
+         // no change but still exsists: {<id>:{}}, deletion: {}
          
       }
    }
@@ -203,6 +203,10 @@ socket.on("getEvents", (data) => {
             console.warn(`Unknown event type: ${event.type}`);
       }
    }
+})
+
+socket.on("death", (data)=>{
+   deathUI(data)
 })
 
 var hitbox = false
@@ -234,7 +238,7 @@ function renderLoop(time) {
          }
          if (!shape.doDrawing) return;
          shape.draw(ctx);
-         shape.drawHitboxes(ctx)
+         shape.drawAccessories(ctx)
       });
    
 
@@ -255,36 +259,65 @@ socket.on("kick", (message) => {
 
 //MAIN KEYBOARD CONTROLS
 
+const keysPressed = new Map()
+let stickWarn = null
+
 document.addEventListener("keydown", (event) => {
+   const key = event.key
    if (!enteredName) {
       return;
    }
    if (document.getElementById("chat-inp")===document.activeElement) return
    
-
-   // Mark the key as pressed
-   if (!keysPressed.includes(event.key)) {
-      keysPressed.push(event.key);
-      socket.emit("input", keysPressed)
+   if (key == 's') {
+      keysPressed.delete('w')
+      if (stickWarn) {
+         stickWarn.remove()
+      }
    }
-   if (event.key=="k"){
+
+   //mark the key as pressed
+   if (!keysPressed.has(key)){ 
+      keysPressed.set(key,{held:true,time:performance.now()})
+      socket.emit("input", Array.from(keysPressed.keys()))
+   } else {
+      const kp = keysPressed.get(key)
+      if (!kp.held){
+         if (kp.stuck){
+            keysPressed.set(key,{held:true,time:performance.now(),stuck:false})
+            stickWarn.remove()
+         }
+      }
+   }
+
+   if (key=="k"){
       hitbox = !hitbox
    }
    
 
-});
+}); 
+
 
 document.addEventListener("keyup", (event) => {
+   const key = event.key
    if (!enteredName) {
       return;
    }
    //if (document.getElementById("chat-inp")===document.activeElement) return
 
    // Remove the key from the pressed keys array
-   const index = keysPressed.indexOf(event.key);
-   if (index > -1) {
-      keysPressed.splice(index, 1);
-      socket.emit("input", keysPressed)
+   
+   if (keysPressed.has(key)) {
+      const kp = keysPressed.get(key)
+      if (performance.now()-kp.time>5000) {
+         if (key =="w") {
+            keysPressed.set(key,{held:false,time:kp.time,stuck:true})
+            stickWarn = addWarning('Automove enabled.')
+            return
+         }
+      }
+      keysPressed.delete(key)
+      socket.emit("input", Array.from(keysPressed.keys()))
    }
 
 });
