@@ -1,8 +1,7 @@
 let DrawingList = new Map(); //list of objects to draw
 
 
-let lastServerUpt = performance.now()
-let currServerUpt = performance.now()
+
 
 
 var socket = io();
@@ -17,7 +16,7 @@ const ctx = canvas.getContext("2d");
 
 
 
-function pixelDensityResolve(canvas, ctx) { //make the canvas hd
+function pixelDensityResolve(canvas, ctx) { 
    const dpr = window.devicePixelRatio || 1; 
    const rect = canvas.getBoundingClientRect(); 
 
@@ -44,13 +43,6 @@ let viewportWidth = window.innerWidth;
 let viewportHeight = window.innerHeight;
 
 
-
-function nameFromID(id) {
-   return DrawingList.get(id)?DrawingList.get(id).name:null
-}
-function teamFromID(id) {
-   return DrawingList.get(id)?DrawingList.get(id).team:null
-}
 
 
 socket.on("connect", () => {
@@ -140,9 +132,27 @@ nameInput.addEventListener('keydown', function(event) {
 waterPattern.initialize()
 
 
-socket.on("getObjects", (data) => {
+let pingArr=[]
+var ping = 0
+
+let lastServerUpt = performance.now()
+let currServerUpt = performance.now()
+
+let offset = null
+
+socket.on("getObjects", (data,serverTime) => {
+   const thisping = Date.now()-serverTime
+
+   if (!offset) {
+      offset = serverTime-performance.now()
+   }
+
+   pingArr.push(thisping)
+   if (pingArr.length>5) pingArr.shift()
+   ping = Math.floor(pingArr.reduce((a,b)=>a+b,0)/pingArr.length)
+
    lastServerUpt = currServerUpt || performance.now()
-   currServerUpt = performance.now()
+   currServerUpt = serverTime
 
 
    for (const [key,value] of Object.entries(data)) {
@@ -214,10 +224,21 @@ var hitbox = false
 
 //MAIN RENDERING LOOP
 let lastTime=performance.now();
+let fpsArr = []
+var fps = 0
 function renderLoop(time) {
    ctx.clearRect(0, 0, canvas.width, canvas.height); // Clear the canvas
    const now = performance.now();
-   let alpha = (now - lastServerUpt) / (currServerUpt - lastServerUpt);
+
+   const thisFrameFps = 1000 / (now - lastTime);
+   fpsArr.push(thisFrameFps)
+   if (fpsArr.length>30) fpsArr.shift()
+   fps = Math.floor(fpsArr.reduce((a,b)=>a+b,0)/fpsArr.length)
+   if (typeof updateStats === "function") {
+      updateStats()
+   }
+
+   let alpha = ((now+offset) - lastServerUpt) / (currServerUpt - lastServerUpt);
 
    //yeah alpha probably needs to be based on server time but whatever idc
    
@@ -303,7 +324,7 @@ document.addEventListener("keyup", (event) => {
    if (!enteredName) {
       return;
    }
-   //if (document.getElementById("chat-inp")===document.activeElement) return
+   if (document.getElementById("chat-inp")===document.activeElement) return
 
    // Remove the key from the pressed keys array
    

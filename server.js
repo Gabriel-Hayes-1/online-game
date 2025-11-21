@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http')
 const { Server } = require("socket.io"); 
 const crypto = require('crypto');
+const { type } = require('os');
 
 const app = express();
 const server = http.createServer(app);
@@ -168,8 +169,14 @@ lastSent: {
 
 */
 
+const epsilon = 1e-10 //ten decimals
 function deepEqual(a, b) {
   if (a === b) return true;
+  
+  if (typeof a =="number" && typeof b =="number") {
+    return Math.abs(a-b)<epsilon
+  }
+
   if (typeof a !== "object" || typeof b !== "object" || a == null || b == null) {
     return false;
   }
@@ -182,6 +189,9 @@ function deepEqual(a, b) {
   return true;
 }
 
+
+
+
 function buildDelta(newState, lastState) {
     const delta = {};
     lastState = lastState || {}
@@ -189,7 +199,8 @@ function buildDelta(newState, lastState) {
         delta[k] = {}
         for (let property in v) {
             lastState[k] = lastState[k]||{}
-            if (!deepEqual(v[property], lastState[k][property])) {
+            if (!deepEqual(v[property], lastState[k][property])){
+                //add to difference
                 delta[k][property] = v[property];
             }
         }
@@ -331,10 +342,10 @@ setInterval(() => {
                 for (const id in delta) {
                     delta[id] = cleanData(delta[id]);
                 }
-                io.to(socketId).emit('getObjects', delta); 
+                io.to(socketId).emit('getObjects', delta,Date.now()); 
 
                 if (visible[1].length > 0) {
-                    io.to(socketId).emit('getEvents', visible[1])
+                    io.to(socketId).emit('getEvents', visible[1],Date.now())
                 }
                 lastSent[socketId] = structuredClone(visible[0])
             }

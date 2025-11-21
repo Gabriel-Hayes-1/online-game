@@ -338,3 +338,20 @@ h2 {
 .warningTimer {
     color: rgba(0, 0, 0, 0.5)
 }
+.stats {
+    position: absolute;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    left: 100%;
+    top:0;
+    height: 100%;
+    width: 200px;
+    transform: translateX(-100%);
+    padding:10px;
+}
+.stats div {
+    text-align: right;
+    font-family: monospace;
+    font-size: 15px;
+}

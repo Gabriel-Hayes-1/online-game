@@ -14,6 +14,8 @@ const playerInfoName = document.getElementById("name")
 
 const deadScreen = document.getElementById("dead")
 
+const stats = document.querySelector(".stats")
+
 const warnings = document.getElementById('warnings')
 
 let hidden = false 
@@ -165,7 +167,16 @@ document.addEventListener("keydown",e=>{
         }
     } 
 
+    if (e.key == "p") {
+        stats.classList.toggle("hidden")
+    }
 })
+
+function updateStats() {
+    document.querySelector(".fps").textContent = `${fps} fps`
+    document.querySelector(".ping").textContent = `${ping} ms ping`
+    document.querySelector(".drawItems").textContent = `${DrawingList.size} objects`
+}
 
 
 function addWarning(text,time) {
