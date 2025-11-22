@@ -261,10 +261,19 @@ h1 {
     padding: 10px;
 }
 
-#player-info progress {
-    width: 100%;
+.healthbar {
+    width:100%;
     height: 40px;
-    accent-color: #00ff00;
+    background-color: #334433;
+    border-radius: 20px;
+    overflow: hidden;
+}
+.health {
+    width: 1%;
+    height: 100%;
+    background-color: #88ee88;
+    border-radius: 100%;
+    
 }
 #player-info #name {
     width: 100%;

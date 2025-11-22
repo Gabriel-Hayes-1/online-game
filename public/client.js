@@ -240,9 +240,18 @@ function renderLoop(time) {
 
    let alpha = ((now+offset) - lastServerUpt) / (currServerUpt - lastServerUpt);
 
-   //yeah alpha probably needs to be based on server time but whatever idc
-   
-   alpha = Math.min(alpha,10)
+   if (alpha > 10 ) {
+      if (!document.querySelector(".connectionWarn")) {
+         if (typeof addWarning == "function") {
+            addWarning("! CONNECTION LOST !").classList.add("connectionWarn")
+         }
+      }
+   } else {
+      document.querySelectorAll(".connectionWarn").forEach(element => {
+         element.remove()
+      });
+   }
+   alpha = Math.min(alpha,10) //clamp
  
    //loop through rendering list
    Array.from(DrawingList.values())
@@ -267,13 +276,15 @@ function renderLoop(time) {
    lastTime = time;
    requestAnimationFrame(renderLoop);
 }
-renderLoop();
+requestAnimationFrame(renderLoop);
 
 //ik ts means nothing but server boots you anyways lol 
-socket.on("kick", (message) => {
-   alert(message);
+socket.on("kick", (message,fromBan) => {
+   if (!fromBan) {
+      alert(message);
+   }
    socket.disconnect();
-   window.location.reload();
+   location.reload();
 });
 
 
@@ -281,7 +292,6 @@ socket.on("kick", (message) => {
 //MAIN KEYBOARD CONTROLS
 
 const keysPressed = new Map()
-let stickWarn = null
 
 document.addEventListener("keydown", (event) => {
    const key = event.key
@@ -292,9 +302,11 @@ document.addEventListener("keydown", (event) => {
    
    if (key == 's') {
       keysPressed.delete('w')
-      if (stickWarn) {
-         stickWarn.remove()
-      }
+      
+      document.querySelectorAll(".automove").forEach(element => {
+         element.remove()
+      });
+      
    }
 
    //mark the key as pressed
@@ -306,7 +318,9 @@ document.addEventListener("keydown", (event) => {
       if (!kp.held){
          if (kp.stuck){
             keysPressed.set(key,{held:true,time:performance.now(),stuck:false})
-            stickWarn.remove()
+            document.querySelectorAll(".automove").forEach(element => {
+               element.remove()
+            });
          }
       }
    }
@@ -333,7 +347,7 @@ document.addEventListener("keyup", (event) => {
       if (performance.now()-kp.time>5000) {
          if (key =="w") {
             keysPressed.set(key,{held:false,time:kp.time,stuck:true})
-            stickWarn = addWarning('Automove enabled.')
+            addWarning('Automove enabled.').classList.add('automove')
             return
          }
       }

@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<head>
+    <title>Banned</title>
+    <style>
+        body {
+            padding: none;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-direction: column;
+        }
+        h1 {
+            font-family: sans-serif;
+            font-weight: bold;
+        }
+        h2 {
+            font-family: sans-serif;
+        }
+    </style>
+</head>
+<body>
+    <h1>You're banned</h1>
+    <h2 id="timeleft"></h2>
+    <h2 id="message"></h2>
+
+    <script>
+        
+        fetch("/ban-info")
+            .then(r=>r.json())
+            .then(data=>{
+                if (data=={}) {
+                    location.reload()
+                }
+
+                const timeleft = document.getElementById("timeleft")
+                document.getElementById("message").textContent = data.msg?"Reason: "+data.msg:"No specified reason."
+
+                if (!data.permanent) {
+                    function banTick() {
+                        const duration = data.time - Date.now()
+                        if (duration<=0) {
+                            location.reload()
+                            return
+                        }
+
+                        let remaining = duration
+                        const days = Math.floor(remaining / (1000 * 60 * 60 * 24))
+                        remaining %= 1000*60*60*24
+
+                        const hours = Math.floor(remaining / (1000*60*60))
+                        remaining%=1000*60*60
+
+                        const minutes = Math.floor(remaining / (1000*60))
+                        remaining%=1000*60
+
+                        const seconds = Math.floor(remaining / 1000)+"s"
+
+                        timeleft.textContent = `Time left: ${days?days+"d":""} ${hours?hours+"h":""} ${minutes?minutes+"m":""} ${seconds}`
+                    }
+                    setInterval(banTick,1000)
+                    banTick()
+                    
+                } else {
+                    timeleft.textContent = "Permanent ban"
+                }
+
+            })
+    </script>
+
+</body>

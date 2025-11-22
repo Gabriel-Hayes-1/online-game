@@ -228,7 +228,7 @@ class Player extends object {
 class lplayer extends Player {
    constructor(data){
       super(data)
-      playerInfoHealth.value = data.health
+      playerInfoHealth.value = data.health //set gui
    }
    set health(newvalue) {
       playerInfoHealth.value = newvalue
@@ -261,6 +261,29 @@ class camera extends object {
          x:worldPos.x-this.nonIntPos.x + this.canvas.width/2,
          y:worldPos.y-this.nonIntPos.y + this.canvas.height/2
       }
+   }
+   shake(amount,time) {
+      let start;
+      let rafId;
+      const shakeFrame = (timestamp) => {
+         if (!start) start=timestamp;
+         const elapsed = timestamp - start;
+         const progress = elapsed / time;
+
+         if (progress >= 1) {
+            cancelAnimationFrame(rafId)
+            return
+         } else {
+            const decay = 1 - progress;
+            const offsetX = (Math.random() * 2 - 1) * amount * decay;
+            const offsetY = (Math.random() * 2 - 1) * amount * decay;
+            this.nonIntPos.x += offsetX;
+            this.nonIntPos.y += offsetY;
+         }
+         
+         rafId = requestAnimationFrame(shakeFrame)
+      }
+      rafId = requestAnimationFrame(shakeFrame)
    }
    static interpolators = {
       pos: (a, b, t) => ({

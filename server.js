@@ -2,7 +2,6 @@ const express = require('express');
 const http = require('http')
 const { Server } = require("socket.io"); 
 const crypto = require('crypto');
-const { type } = require('os');
 
 const app = express();
 const server = http.createServer(app);
@@ -12,6 +11,38 @@ const io = new Server(server);
 
 const ip = "0.0.0.0"
 const port = 3000
+
+app.get("/ban-info", (req,res)=>{
+    const clientIp = req.headers['cf-connecting-ip'] || req.socket.remoteAddress;
+    const bannedInfo = bannedIps[clientIp]
+    if (bannedInfo) {
+        res.json(bannedInfo)
+    } else {
+        res.json({})
+    }
+})
+
+app.use((req,res,next)=>{
+    const clientIp = req.headers['cf-connecting-ip'] || req.socket.remoteAddress;
+    if (bannedIps[clientIp]) {
+        const banInfo = bannedIps[clientIp];
+        if (!banInfo.permanent) {
+            if (banInfo.time < Date.now()) {
+                delete bannedIps[clientIp]; // unban expired ban
+            } else {
+                res.sendFile(__dirname+"/banned/index.html")
+                return;
+            }
+        } else {
+            res.sendFile(__dirname+"/banned/index.html")
+            return;
+        }
+        
+    }
+    next();
+})
+
+
 
 app.use(express.static('public'));
 
@@ -476,14 +507,41 @@ setInterval(() => {
     loopCounter++;
 }, 1000 / 60); // 60 htz calculation rate
 
-function kick(socketId, message = 'You have been kicked from the server.') {
+function kick(socketId, message = 'You have been kicked from the server.',fromBan=false) {
     const socket = io.sockets.sockets.get(socketId);
     if (socket) {
-        socket.emit('kick', message); // send kick message to the client
+        socket.emit('kick', message,fromBan); // send kick message to the client
         socket.disconnect(true); // force disconnect
         console.log(`Socket ${socketId} has been kicked: ${message}`);
     } else {
         console.warn(`Socket ${socketId} not found for kicking.`);
+    }
+}
+
+let bannedIps = {}
+function ban(ip, message="You have been banned from the server.",time) {
+    let perm
+    if (typeof time == "number") {
+        perm = false
+    } else {
+        perm = true
+    }
+    bannedIps[ip] = {msg:message,time:(time*1000)+Date.now(),permanent:perm}
+    console.log(`Banned IP ${ip} for ${perm?"permanently":time+" seconds"}. Reason: ${message}`)
+    
+    for (const [id,socket] of io.sockets.sockets) {
+        const socketIp = socket.handshake.headers['cf-connecting-ip'] || socket.handshake.address
+        if (socketIp === ip) {
+            kick(id,message,true)
+        }
+    }
+}
+function unban(ip) {
+    if (bannedIps[ip]) {
+        delete bannedIps[ip]
+        console.log(`Unbanned IP ${ip}.`)
+    } else {
+        console.log(`IP ${ip} is not banned.`)
     }
 }
 
@@ -522,16 +580,21 @@ const blacklistedProperties = [ //List of names of player properties to not send
 io.on('connection', (socket) => {
     //set default statistics
 
+    const ip = socket.handshake.headers['cf-connecting-ip'] || socket.handshake.address
+
+    ban(ip,"you're banned for testing. this will be fixed soon!",true) //20 sec
+
     // all properties including 'constant' are to be stats for the players' ship.
     players[socket.id] = {
         id:socket.id,
         className: 'Player', //this is a VERY IMPORTANT property. client need this to know what type of object this is.
-        ip: socket.handshake.address,
+        ip: ip,
         admin: false, 
         state: "noname", // states: noname, alive, dead, spectating
         team: "none",
         zoom:1, 
         health:100,
+        maxHealth:100,
         name: null,
         pos:{x:0,y:0}, 
         motion:{x:0,y:0},
@@ -556,7 +619,7 @@ io.on('connection', (socket) => {
     };
     objects[socket.id] = players[socket.id]; // add player to objects
 
-    console.log(`A user connected: ${socket.id}. There are now ${Object.keys(players).length} players connected.`);
+    console.log(`A user connected: ${ip} (${socket.id}). There are now ${Object.keys(players).length} players connected.`);
 
     socket.emit("config",{maxNameLength:maxNameLength,maxChatLen:maxChatLen})
 
@@ -632,8 +695,7 @@ if (process.argv.includes("--local")){
 }
 
 
-console.log(host)
 server.listen(port,host, () => {
-    console.log(`Server is running on http://${host==="127.0.0.1"?"localhost":ip}:${5000}`);
+    console.log(`Server is running on http://${host==="127.0.0.1"?"localhost":ip}:${port} and https://steelseas.xyz`);
 });
 
