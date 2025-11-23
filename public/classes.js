@@ -174,6 +174,7 @@ class Player extends object {
       this.name = data.name;
       this.team = data.team
       this._health = data.health
+      this.maxHealth = data.maxHealth
       this.rot = 0;
       this.zIndex = 4;
       this.local = data.local || false;
@@ -228,10 +229,10 @@ class Player extends object {
 class lplayer extends Player {
    constructor(data){
       super(data)
-      playerInfoHealth.value = data.health //set gui
+      playerInfoHealth.style.width = `${(data.health/this.maxHealth)*100}%` //set gui
    }
    set health(newvalue) {
-      playerInfoHealth.value = newvalue
+      playerInfoHealth.style.width = `${Math.max(0,(newvalue/this.maxHealth)*100)}%` //set gui
       this._health = newvalue
    }
    static interpolators = {

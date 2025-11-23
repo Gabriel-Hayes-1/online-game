@@ -8,7 +8,7 @@ const toggleButton = document.getElementById("chat-hide-button")
 const nameScreen = document.querySelector(".name-screen");
 
 const playerInfo = document.getElementById("player-info")
-const playerInfoHealth = document.getElementById("health")
+const playerInfoHealth = document.querySelector(".health")
 const playerInfoSubtitle = document.getElementById("subtitle")
 const playerInfoName = document.getElementById("name")
 

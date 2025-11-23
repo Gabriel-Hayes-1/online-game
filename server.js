@@ -2,6 +2,7 @@ const express = require('express');
 const http = require('http')
 const { Server } = require("socket.io"); 
 const crypto = require('crypto');
+const net = require("net")
 
 const app = express();
 const server = http.createServer(app);
@@ -78,12 +79,12 @@ rl.on('line', (input) => {
             console.log('Current player data:');
             console.log(JSON.stringify(players));
             break;
-        case input === 'data get playerboard':
+        case input === 'playerboard':
             //log all players socket ids and names
             console.log('Current player board:');
             for (const socketId in players) {
                 const player = players[socketId];
-                console.log(`ID: ${socketId}, Name: ${player.name || 'Unnamed'}`);
+                console.log(`ID: ${socketId}, Name: ${player.name || 'Unnamed'}, IP: ${player.ip}`);
             }
             break;
         
@@ -97,47 +98,35 @@ rl.on('line', (input) => {
                 console.log(`Player ${playerId} not found.`);
             }
             break;
-
-        case input.startsWith('data set player '):
-            //extract the id, property, and value
-            const parts = input.split(' ');
-            if (parts.length < 5) {
-                console.log('Usage: data set player <id> <property> <value>');
-                break;
+        case input.startsWith('ban'):
+            const banIp = input.split(' ')[1];
+            const time = input.split(' ')[2];
+            const reason = input.split(' ').slice(3).join(' ') || "No reason provided";
+            if (!banIp) {
+                console.log("Syntax: ban <ip> [time in seconds] [reason]");
+            } else {
+                const parsedTime = parseInt(time) || false
+                ban(banIp,reason,parsedTime);
             }
-            const setPlayerId = parts[3];
-            const property = parts[4];
-            const value = parts.slice(5).join(' ');
-
-            if (players[setPlayerId]) {
-                if (property in players[setPlayerId]) {
-                    //make sure that the data type of the value matches the property
-                    const propertyType = typeof players[setPlayerId][property];
-                    switch (propertyType) {
-                        case 'number':
-                            players[setPlayerId][property] = parseFloat(value);
-                            break;
-                        case 'string':
-                            players[setPlayerId][property] = value;
-                            console.log(`Property ${property} set to ${value} for player ${setPlayerId}.`);
-                            break;
-                        case 'boolean':
-                            players[setPlayerId][property] = (value.toLowerCase() === 'true');
-                            break;
-                        case 'object':
-                            try {
-                                players[setPlayerId][property] = JSON.parse(value);
-                            } catch (e) {
-                                console.log(`Failed to parse JSON for property ${property}: ${e.message}`);
-                            }
-                            break;
-                        default:
-                            console.log(`Property ${property} has an unsupported type: ${propertyType}`);
-                    }
-                } else {
-                    console.log(`Property ${property} does not exist for player ${setPlayerId}.`);
-                }
-            } else {console.log(`Player ${setPlayerId} not found.`); break;}
+            break
+        case input.startsWith('unban'): 
+            const unbanIp = input.split(' ')[1];
+            if (!unbanIp) {
+                console.log("Syntax: unban <ip>");
+            }
+            else {
+                unban(unbanIp);
+            }
+            break
+        case input.startsWith('kick'):
+            const kickId = input.split(' ')[1];
+            if (!kickId) {
+                console.log("Syntax: kick <socketId> [reason]");
+            } else {
+                const reason = input.split(' ').slice(2).join(' ');
+                kick(kickId,reason); 
+            }
+            break
     }
 });
 
@@ -255,6 +244,7 @@ function cheapHitboxCheck(pid) {
     for (const [key,value] of Object.entries(objects)) {
         if (key === pid) continue;
         if (!value.name) continue;
+        if (value.state !== "alive") continue;
         const rSum = (player.cheapHitbox.radius || 0) + (value.cheapHitbox.radius || 0);
         const mindist = rSum * rSum;
 
@@ -507,19 +497,25 @@ setInterval(() => {
     loopCounter++;
 }, 1000 / 60); // 60 htz calculation rate
 
-function kick(socketId, message = 'You have been kicked from the server.',fromBan=false) {
-    const socket = io.sockets.sockets.get(socketId);
+function kick(id, message = 'You have been kicked from the server.',fromBan=false) {
+    const socket = io.sockets.sockets.get(id);
     if (socket) {
-        socket.emit('kick', message,fromBan); // send kick message to the client
+        socket.emit('kick', "Kicked: "+message,fromBan); // send kick message to the client
         socket.disconnect(true); // force disconnect
-        console.log(`Socket ${socketId} has been kicked: ${message}`);
+        if (!fromBan) {
+            console.log(`Socket ${id} has been kicked: ${message}`);
+        }
     } else {
-        console.warn(`Socket ${socketId} not found for kicking.`);
+        console.warn(`Socket ${id} not found for kicking.`);
     }
 }
 
 let bannedIps = {}
 function ban(ip, message="You have been banned from the server.",time) {
+    if (net.isIP(ip)===0) {
+        return false
+    }
+
     let perm
     if (typeof time == "number") {
         perm = false
@@ -527,7 +523,7 @@ function ban(ip, message="You have been banned from the server.",time) {
         perm = true
     }
     bannedIps[ip] = {msg:message,time:(time*1000)+Date.now(),permanent:perm}
-    console.log(`Banned IP ${ip} for ${perm?"permanently":time+" seconds"}. Reason: ${message}`)
+    console.log(`Banned IP ${ip} ${perm?"permanently":"for "+time+" seconds"}. Reason: ${message}`)
     
     for (const [id,socket] of io.sockets.sockets) {
         const socketIp = socket.handshake.headers['cf-connecting-ip'] || socket.handshake.address
@@ -581,8 +577,6 @@ io.on('connection', (socket) => {
     //set default statistics
 
     const ip = socket.handshake.headers['cf-connecting-ip'] || socket.handshake.address
-
-    ban(ip,"you're banned for testing. this will be fixed soon!",true) //20 sec
 
     // all properties including 'constant' are to be stats for the players' ship.
     players[socket.id] = {
