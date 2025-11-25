@@ -202,20 +202,21 @@ socket.on("getObjects", (data,serverTime) => {
 
 socket.on("getEvents", (data) => {
    for (const event of data) {
-      switch (event.type) {
-         case "WaterCircle":
-            const circle = new WaterCircle(event);
-            event.pos.y *=-1
-            circle.worldPos = event.pos
-            DrawingList.set(circle.id, circle);
-            break;
-         default:
-            console.warn(`Unknown event type: ${event.type}`);
+      if (event.type === "WaterCircle") {
+         const circle = new WaterCircle(event);
+         event.pos.y *= -1;
+         circle.worldPos = event.pos;
+         DrawingList.set(circle.id, circle);
+      } else if (event.type === "chat") {
+         chatReceived(event.scope,event.name,event.team,event.msg)
+      } else {
+         console.warn(`Unknown event type: ${event.type}`);
       }
    }
 })
 
 socket.on("death", (data)=>{
+   console.log("DIED!", data)
    deathUI(data)
 })
 

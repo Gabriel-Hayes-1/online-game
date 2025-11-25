@@ -3,6 +3,7 @@ const http = require('http')
 const { Server } = require("socket.io"); 
 const crypto = require('crypto');
 const net = require("net")
+const path = require('path')
 
 const app = express();
 const server = http.createServer(app);
@@ -12,6 +13,8 @@ const io = new Server(server);
 
 const ip = "0.0.0.0"
 const port = 3000
+
+app.set("trust proxy", true);
 
 app.get("/ban-info", (req,res)=>{
     const clientIp = req.headers['cf-connecting-ip'] || req.socket.remoteAddress;
@@ -27,23 +30,21 @@ app.use((req,res,next)=>{
     const clientIp = req.headers['cf-connecting-ip'] || req.socket.remoteAddress;
     if (bannedIps[clientIp]) {
         const banInfo = bannedIps[clientIp];
-        if (!banInfo.permanent) {
-            if (banInfo.time < Date.now()) {
-                delete bannedIps[clientIp]; // unban expired ban
-            } else {
-                res.sendFile(__dirname+"/banned/index.html")
-                return;
-            }
+        if (!banInfo.permanent && banInfo.time < Date.now()) {
+            delete bannedIps[clientIp]; // unban expired ban
         } else {
-            res.sendFile(__dirname+"/banned/index.html")
-            return;
+            const banPage = path.join(__dirname, 'banned', 'index.html');
+
+            if (req.accepts && req.accepts('html')) {
+                // Serve the banned HTML for page requests (with 403 status)
+                return res.status(403).sendFile(banPage);
+            }
+            //for other file type requests
+            return res.status(403).send('banned');
         }
-        
     }
     next();
 })
-
-
 
 app.use(express.static('public'));
 
@@ -68,8 +69,10 @@ rl.on('line', (input) => {
             const parsed = parseInt(parts[1], 10);
             const amount = Number.isNaN(parsed) ? 10 : parsed;
             for (const socketid of Object.keys(players)) {
-                if (objects[socketid] && typeof objects[socketid].health === 'number') {
+                if (objects[socketid].state == "alive") {
+                    if (objects[socketid] && typeof objects[socketid].health === 'number') {
                     objects[socketid].health -= amount;
+                    }
                 }
             }
             console.log(`damaged all for ${amount} damage`);
@@ -127,10 +130,44 @@ rl.on('line', (input) => {
                 kick(kickId,reason); 
             }
             break
+        case input.startsWith('kickAll'):
+            const re = input.split(' ').slice(1).join(' ') || "You have been kicked from the server.";
+            for (const socketId of Object.keys(players)) {
+                kick(socketId,re);
+            }
+            break
     }
 });
 
-
+function filterEvents(events,id) { //filter global events for player [id]
+    const player = objects[id]
+    let visibleEvents = []
+    for (const event of events) {
+        if (event.scope == "world") {
+            const viewport = player.viewport
+            const buffer = 50
+            if (
+                event.pos.x >= player.pos.x - (viewport.width / 2 + buffer) &&
+                event.pos.x <= player.pos.x + (viewport.width / 2 + buffer) &&
+                event.pos.y >= player.pos.y - (viewport.height / 2 + buffer) &&
+                event.pos.y <= player.pos.y + (viewport.height / 2 + buffer) 
+            ) {
+                visibleEvents.push(event);
+            }
+        } else if (event.scope == "team") {
+            if (player.team && event.team && player.team === event.team) {
+                visibleEvents.push(event);
+            }
+        } else if (event.scope == "global") {
+            visibleEvents.push(event);
+        } else if (event.scope == "personal") {
+            if (event.target == id) {
+                visibleEvents.push(event);
+            }
+        }
+    }
+    return visibleEvents
+}
 
 function getObjectsVisibleTo(id) {
     const player = objects[id];
@@ -157,19 +194,8 @@ function getObjectsVisibleTo(id) {
             visiblePlayers[i] = object;
         }
     }
-    const visibleEvents = [];
-    for (const event of events) {
-        if (
-            event.pos.x >= player.pos.x - (viewport.width / 2 + buffer) &&
-            event.pos.x <= player.pos.x + (viewport.width / 2 + buffer) &&
-            event.pos.y >= player.pos.y - (viewport.height / 2 + buffer) &&
-            event.pos.y <= player.pos.y + (viewport.height / 2 + buffer) 
-        ) {
-            visibleEvents.push(event);
-        }
-    }
-
-    return [visiblePlayers, visibleEvents];
+    
+    return [visiblePlayers, filterEvents(events,id)];
 }
 
 
@@ -363,10 +389,10 @@ setInterval(() => {
                 for (const id in delta) {
                     delta[id] = cleanData(delta[id]);
                 }
-                io.to(socketId).emit('getObjects', delta,Date.now()); 
+                io.to(socketId).emit('getObjects', delta, Date.now()); 
 
                 if (visible[1].length > 0) {
-                    io.to(socketId).emit('getEvents', visible[1],Date.now())
+                    io.to(socketId).emit('getEvents', visible[1], Date.now())
                 }
                 lastSent[socketId] = structuredClone(visible[0])
             }
@@ -380,97 +406,94 @@ setInterval(() => {
 
     //manage player motion, motion decay, and inputs
     for (const socketId in players) {
-        if (objects[socketId].name == null) {
-            continue
-        }
-        const player = players[socketId];
-        const inputs = player.inputs;
-        const rot = player.rot;
-        const mass = player.mass; // mass affects inertia of player
-        const motionConstant = player.motionConstant;
-        const rotSpeedConstant = player.rotSpeedConstant;
+        if (objects[socketId].state == "alive") { //only move alive players
+            const player = players[socketId];
+            const inputs = player.inputs;
+            const rot = player.rot;
+            const mass = player.mass; // mass affects inertia of player
+            const motionConstant = player.motionConstant;
+            const rotSpeedConstant = player.rotSpeedConstant;
 
-        const speed = Math.hypot(player.motion.x, player.motion.y);
-        const maxSpeed = 100
-        const forward = {x: Math.cos(rot), y: Math.sin(-rot)};
+            const speed = Math.hypot(player.motion.x, player.motion.y);
+            const maxSpeed = 100
+            const forward = {x: Math.cos(rot), y: Math.sin(-rot)};
 
-        const turnFactor = 0.1; // how quickly velocity aligns with facing
-        player.motion.x = (1 - turnFactor) * player.motion.x + turnFactor * forward.x * speed;
-        player.motion.y = (1 - turnFactor) * player.motion.y + turnFactor * forward.y * speed;
+            const turnFactor = 0.1; // how quickly velocity aligns with facing
+            player.motion.x = (1 - turnFactor) * player.motion.x + turnFactor * forward.x * speed;
+            player.motion.y = (1 - turnFactor) * player.motion.y + turnFactor * forward.y * speed;
 
-        // decay motion towards zero
-        const thrust = (motionConstant / mass) * deltaTime; 
-        // Scale rotation acceleration by current speed (absolute value)
-        // Add a small constant (e.g., 0.2) to allow some turning when nearly stopped
-        const speedFactor = (Math.abs(speed) + 2)/100;
-        const rotAccel = Math.max((rotSpeedConstant / mass) * speedFactor,10) *deltaTime;
+            // decay motion towards zero
+            const thrust = (motionConstant / mass) * deltaTime; 
+            // Scale rotation acceleration by current speed (absolute value)
+            // Add a small constant (e.g., 0.2) to allow some turning when nearly stopped
+            const speedFactor = (Math.abs(speed) + 2)/100;
+            const rotAccel = Math.max((rotSpeedConstant / mass) * speedFactor,10) *deltaTime;
 
-        const baseDrag = 0.1;
-        const dampingFactor = Math.max(0, 1 - (baseDrag / mass) * deltaTime); 
+            const baseDrag = 0.1;
+            const dampingFactor = Math.max(0, 1 - (baseDrag / mass) * deltaTime); 
 
-        player.motion.x *= dampingFactor; 
-        player.motion.y *= dampingFactor; 
-        // reduce rotational motion with same damping, but scale decay by speed:
-        // when moving faster, rotation is preserved more; when near-stopped it decays faster.
-        const rotSpeedPreserve = Math.max(0.1, Math.abs(speed) / maxSpeed); // minimum preservation so it still decays
-        player.rotMotion *= dampingFactor * rotSpeedPreserve;
+            player.motion.x *= dampingFactor; 
+            player.motion.y *= dampingFactor; 
+            // reduce rotational motion with same damping, but scale decay by speed:
+            // when moving faster, rotation is preserved more; when near-stopped it decays faster.
+            const rotSpeedPreserve = Math.max(0.1, Math.abs(speed) / maxSpeed); // minimum preservation so it still decays
+            player.rotMotion *= dampingFactor * rotSpeedPreserve;
 
-        // apply inputs
-        if (inputs.includes('ArrowLeft') || inputs.includes('a')) {
-            player.rotMotion -= rotAccel; // rotate left
-        }
-        if (inputs.includes('ArrowRight') || inputs.includes('d')) {
-            player.rotMotion += rotAccel; // rotate right
-        }
-
-        if (inputs.includes('ArrowUp') || inputs.includes('w')) {
-            player.motion.x += Math.cos(rot) * thrust;
-            player.motion.y += Math.sin(-rot) * thrust;
-        }
-        if (inputs.includes('ArrowDown') || inputs.includes('s')) {
-            player.motion.x -= Math.cos(rot) * thrust;
-            player.motion.y -= Math.sin(-rot) * thrust;
-        }
-
-        const newSpeed = Math.hypot(player.motion.x, player.motion.y);
-        if (newSpeed > maxSpeed) {
-            
-            player.motion.x *= maxSpeed / newSpeed;
-            player.motion.y *= maxSpeed / newSpeed;
-        }
-
-        //run collision checks
-        //first cheap, then advanced
-
-        const candidates = cheapHitboxCheck(socketId) //candidates for more detailed check
-    
-        for (const candidate of candidates) {
-            const newvec= expensiveCollision(socketId,candidate,deltaTime)
-            if (newvec) {
-                player.motion.x = newvec.x
-                player.motion.y = newvec.y
+            // apply inputs
+            if (inputs.includes('ArrowLeft') || inputs.includes('a')) {
+                player.rotMotion -= rotAccel; // rotate left
             }
-        }
+            if (inputs.includes('ArrowRight') || inputs.includes('d')) {
+                player.rotMotion += rotAccel; // rotate right
+            }
 
+            if (inputs.includes('ArrowUp') || inputs.includes('w')) {
+                player.motion.x += Math.cos(rot) * thrust;
+                player.motion.y += Math.sin(-rot) * thrust;
+            }
+            if (inputs.includes('ArrowDown') || inputs.includes('s')) {
+                player.motion.x -= Math.cos(rot) * thrust;
+                player.motion.y -= Math.sin(-rot) * thrust;
+            }
+
+            const newSpeed = Math.hypot(player.motion.x, player.motion.y);
+            if (newSpeed > maxSpeed) {
+                
+                player.motion.x *= maxSpeed / newSpeed;
+                player.motion.y *= maxSpeed / newSpeed;
+            }
+
+            //run collision checks
+            //first cheap, then advanced
+
+            const candidates = cheapHitboxCheck(socketId) //candidates for more detailed check
         
+            for (const candidate of candidates) {
+                const newvec= expensiveCollision(socketId,candidate,deltaTime)
+                if (newvec) {
+                    player.motion.x = newvec.x
+                    player.motion.y = newvec.y
+                }
+            }
+
+            
 
 
-        // apply motion to player position
-        player.pos.x += player.motion.x * deltaTime;
-        player.pos.y += player.motion.y * deltaTime;
-        player.rot +=(player.rotMotion * deltaTime);
+            // apply motion to player position
+            player.pos.x += player.motion.x * deltaTime;
+            player.pos.y += player.motion.y * deltaTime;
+            player.rot +=(player.rotMotion * deltaTime);
 
-        // check death
-        if (player.health <= 0 ) {
-            player.state = "dead"
-            player.health = 0
-            io.to(socketId).emit("death",{score:0,cause:'kill',player:null,method:'',name:player.name})
-        }
+            // check death
+            if (player.health <= 0) {
+                player.state = "dead"
+                player.health = 0
+                io.to(socketId).emit("death",{score:0,cause:'kill',player:null,method:'',name:player.name})
+            }
 
 
-        //summon watercircles
-        
-        if (player.state == 'alive') {
+            //summon watercircles
+            
             const minSpeed = 0.01; 
             const clampedSpeed = Math.max(speed, minSpeed);
 
@@ -482,17 +505,17 @@ setInterval(() => {
                 const WaterCircle = {
                     id: crypto.randomUUID(),
                     type: 'WaterCircle',
+                    scope: 'world', //cull event based on world position
                     pos: { x: player.pos.x, y: player.pos.y },
                     owner: socketId
                 };
                 events.push(WaterCircle);
             }
+            
+
+
         }
-
-        
-        
     }
-
 
     loopCounter++;
 }, 1000 / 60); // 60 htz calculation rate
@@ -503,7 +526,7 @@ function kick(id, message = 'You have been kicked from the server.',fromBan=fals
         socket.emit('kick', "Kicked: "+message,fromBan); // send kick message to the client
         socket.disconnect(true); // force disconnect
         if (!fromBan) {
-            console.log(`Socket ${id} has been kicked: ${message}`);
+            console.log(`Socket ${id} has been kicked${message?": ":"."}${message}`);
         }
     } else {
         console.warn(`Socket ${id} not found for kicking.`);
@@ -513,7 +536,7 @@ function kick(id, message = 'You have been kicked from the server.',fromBan=fals
 let bannedIps = {}
 function ban(ip, message="You have been banned from the server.",time) {
     if (net.isIP(ip)===0) {
-        return false
+        console.log("ip not valid")
     }
 
     let perm
@@ -559,6 +582,20 @@ function getNextTeam(){
     } else {
         let a =["red","blue"]
         return a[Math.floor(Math.random()*2)] //random choice
+    }
+}
+
+function damagePlayer(playerToDamage,playerDamaging,amount) {
+    //damage player as if damaged by another, for kill credit
+    if (playerToDamage.health<amount) {
+        playerToDamage.health = 0
+        playerToDamage.state = "dead"
+        if (playerDamaging) {
+            io.to(playerToDamage.id).emit("death",{score:0,cause:'kill',player:playerDamaging.id,method:'',name:playerDamaging.name})
+            io.emit("kill", {killer: {name:playerDamaging.name,team:playerDamaging.team}, victim: {name:playerToDamage.name,team:playerToDamage.team},awarded:0});
+        }
+    } else {
+        playerToDamage.health -= amount
     }
 }
 
@@ -627,25 +664,33 @@ io.on('connection', (socket) => {
     });
 
     socket.on('chat',(msg,to)=>{
-        let team = "all"
-        if (to==="team") {
-            team = players[socket.id].team
-        }
 
+        if (to!="global" && to!="team") {
+            to = "global" //protect server 
+        }
+        
         if (typeof msg !== 'string') return; //invalid message
         if (msg.length > maxChatLen) {
             //client suspected of cheating; our client code should prevent this
             console.log(`Player ${socket.id} sent a chat message longer than ${maxChatLen} characters. They may be cheating.`);
-            
             return
         }
-        io.to(team).emit('chat',{name:players[socket.id].name,team:players[socket.id].team},msg,team)
-    })
+        const chatmsg = {
+            type:"chat",
+            scope:to,
+            name: players[socket.id].name, //senders name
+            team: players[socket.id].team, //senders team
+            msg: msg,
+        }
+        events.push(chatmsg)
+
+    });
 
 
     socket.on('name', (name) => {
         const player = players[socket.id]
-        if (players[socket.id].state == "noname" || players[socket.id].state=="dead") { //must be dead or no name to change name
+        if (players[socket.id].state == "noname" || players[socket.id].state=="dead") { //must be dead or no name to change name 
+
 
             if (name.length > maxNameLength) { //clients cant be trusted to limit name length
                 console.log(`Player ${socket.id} tried to set their name to ${name}, which is longer than ${maxNameLength} characters. They may be cheating.`);
@@ -659,8 +704,6 @@ io.on('connection', (socket) => {
                     player.team = getNextTeam();
                 }
             }
-            socket.join(player.team); //join team room
-            socket.join("all")
 
             console.log(`Player ${socket.id} set name to ${name}`);
             
@@ -676,7 +719,10 @@ io.on('connection', (socket) => {
     socket.on('disconnect', () => {
         if (!objects[socket.id]) return; //socket exsists without entry?
         console.log(`User disconnected: ${socket.id} (${objects[socket.id].name})`);
-        socket.broadcast.emit('disconnected', objects[socket.id].name);
+        if (objects[socket.id].state =="alive") {
+            //no one cares about you unless you're alive
+            socket.broadcast.emit('disconnected', objects[socket.id].name);
+        }
         delete players[socket.id];
         delete objects[socket.id]
         //broadcast who disconnected

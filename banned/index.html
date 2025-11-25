@@ -8,6 +8,9 @@
             align-items: center;
             justify-content: center;
             flex-direction: column;
+            margin-top: 40vh;
+            transform: translateY(-50%);
+            font-size: 20px;
         }
         h1 {
             font-family: sans-serif;
@@ -15,13 +18,20 @@
         }
         h2 {
             font-family: sans-serif;
+            font-weight: lighter;
+        }
+        h3 {
+            font-family: sans-serif;
+            font-weight: lighter;
+            color: #aaaaaa;
         }
     </style>
 </head>
 <body>
     <h1>You're banned</h1>
-    <h2 id="timeleft"></h2>
     <h2 id="message"></h2>
+    <h2 id="timeDone"></h2>
+    <h3 id="timeleft"></h3>
 
     <script>
         
@@ -34,8 +44,21 @@
 
                 const timeleft = document.getElementById("timeleft")
                 document.getElementById("message").textContent = data.msg?"Reason: "+data.msg:"No specified reason."
+                
+                
 
                 if (!data.permanent) {
+                    const date = new Date(data.time)
+                    const y = date.getFullYear()
+                    const m = String(date.getMonth()+1).padStart(2,"0")
+                    const d = String(date.getDate()).padStart(2,"0")
+                    const h = String(date.getHours()).padStart(2,"0")
+                    const mi = String(date.getMinutes()).padStart(2,"0")
+                    const s = String(date.getSeconds()).padStart(2,"0")
+                    const timeDone = `Unbanned: ${y}/${m}/${d} ${h}:${mi}:${s}`
+                    document.getElementById("timeDone").textContent = timeDone
+
+
                     function banTick() {
                         const duration = data.time - Date.now()
                         if (duration<=0) {
@@ -55,7 +78,7 @@
 
                         const seconds = Math.floor(remaining / 1000)+"s"
 
-                        timeleft.textContent = `Time left: ${days?days+"d":""} ${hours?hours+"h":""} ${minutes?minutes+"m":""} ${seconds}`
+                        timeleft.textContent = `${days?days+"d":""} ${hours?hours+"h":""} ${minutes?minutes+"m":""} ${seconds}`
                     }
                     setInterval(banTick,1000)
                     banTick()

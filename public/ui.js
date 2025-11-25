@@ -38,7 +38,15 @@ function sendChat() {
     } else if (chatbox.value==="") {
         return
     }
-    socket.emit("chat",chatbox.value,chatTeam.value)
+
+    let scope
+    if (chatTeam.value == "all") {
+        scope="global"
+    } else {
+        scope="team"
+    }
+
+    socket.emit("chat",chatbox.value,scope)
     chatbox.value=""
     chatbox.blur()
 }
@@ -101,27 +109,26 @@ function localChatmsg(msg) {
 localChatmsg("Welcome to the chat! Press 't' to type.")
 
 
-socket.on("chat",(from,msg,team)=>{
+
+function chatReceived(scope,fromName,fromTeam,msg) {
     const wasAtBottom = msgArea.scrollTop + msgArea.clientHeight >= msgArea.scrollHeight - 5
-
-
+    
     const messageElem = document.createElement("div")
     messageElem.classList.add("chat-message")
 
     const fromElem = document.createElement("span")
     fromElem.classList.add("chat-from")
-    fromElem.textContent = from.name+": "
+    fromElem.textContent = fromName+": "
 
-    const t = from.team
-    fromElem.style.color = t
+    fromElem.style.color = fromTeam
 
-    if (team != "all") {
+    if (scope == "team") {
         const teamElm = document.createElement("span")
-        if (team==="red"){
+        if (fromTeam==="red"){
             teamElm.textContent="[RED] "
             teamElm.style.color="red"
             fromElem.prepend(teamElm)
-        } else if (team==="blue"){
+        } else if (fromTeam==="blue"){
             teamElm.textContent="[BLUE] "
             teamElm.style.color="blue"
             fromElem.prepend(teamElm)
@@ -145,7 +152,7 @@ socket.on("chat",(from,msg,team)=>{
     if (msgArea.children.length>maxMessages){
         msgArea.removeChild(msgArea.children[0])
     }
-})
+};
 
 
 toggleButton.addEventListener("click",event=>{
